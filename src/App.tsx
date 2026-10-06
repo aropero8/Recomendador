@@ -1,5 +1,6 @@
 import { liveQuery } from "dexie";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { requestPersistence } from "./backup";
 import { db, Stopper } from "./db";
 import { loadSettings, saveSettings, Settings } from "./settings";
 import { Item, ITEM_TYPES, TYPE_LABEL } from "./types";
@@ -22,11 +23,13 @@ export default function App() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [stoppable, setStoppable] = useState(false); // hay un proceso largo que se puede detener
   const stopper = useRef<Stopper>({ stopped: false });
+  const [persisted, setPersisted] = useState<boolean | null>(null);
 
   const addLog = useCallback((m: string) => setLog((l) => [...l.slice(-60), m]), []);
 
   useEffect(() => {
     loadSettings().then(setSettings);
+    requestPersistence().then(setPersisted).catch(() => setPersisted(null));
     // Se actualiza solo cada vez que cambia la base de datos (también durante una importación)
     const sub = liveQuery(() => db.items.toArray()).subscribe({
       next: setItems,
@@ -85,6 +88,7 @@ export default function App() {
             run={run}
             addLog={addLog}
             stoppable={stoppable}
+            persisted={persisted}
             onStop={() => (stopper.current.stopped = true)}
           />}
         {tab === "settings" && (

@@ -38,6 +38,14 @@ directas. Con `npm run preview` o una web estática la importación de MAL no fu
 ## Notas
 - Sin probar aún con datos reales: es un primer borrador.
 
+## Copias de seguridad
+La biblioteca vive en la base de datos del navegador (o de la app en Android):
+depende del navegador y de la dirección exacta (`localhost:5173` no es lo mismo
+que `127.0.0.1:5173`) y se pierde si se borran los datos del sitio. En Datos ->
+Copia de seguridad puedes exportarla a un `.json` y restaurarla en otro navegador
+o en el móvil. La copia no incluye las claves de Ajustes. Los archivos
+`backup*.json` están en `.gitignore`.
+
 ## Privacidad
 Tus listas, notas y claves nunca salen del dispositivo (salvo las consultas a
 las APIs públicas). El repositorio no incluye datos personales: `.gitignore`

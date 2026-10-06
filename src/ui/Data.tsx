@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { exportBackup, restoreBackup } from "../backup";
 import type { Stopper } from "../db";
 import { completarSinopsis, importBooks } from "../ingest/books";
 import { completarPeliculas, importLetterboxd } from "../ingest/letterboxd";
@@ -17,12 +18,14 @@ interface Props {
   addLog: Log;
   stoppable: boolean;
   onStop: () => void;
+  persisted: boolean | null;
 }
 
-export default function Data({ settings, counts, log, busy, run, addLog, stoppable, onStop }: Props) {
+export default function Data({ settings, counts, log, busy, run, addLog, stoppable, onStop, persisted }: Props) {
   const [zip, setZip] = useState<File | null>(null);
   const [leidos, setLeidos] = useState<File | null>(null);
   const [sinLeer, setSinLeer] = useState<File | null>(null);
+  const [backup, setBackup] = useState<File | null>(null);
 
   return (
     <div className="stack">
@@ -92,6 +95,26 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
         <p className="hint">Después, busca las sinopsis en Open Library (una petición por segundo). Puedes detenerlo y reanudarlo.</p>
         <button disabled={busy} onClick={() => run((stop) => completarSinopsis(addLog, stop), true)}>
           Completar sinopsis (libros)
+        </button>
+      </section>
+
+      <section>
+        <h2>Copia de seguridad</h2>
+        <p className="hint">
+          Tu biblioteca se guarda en este navegador
+          {persisted === true && " y está protegida para que no se borre por falta de espacio"}
+          {persisted === false && ", pero el navegador puede borrarla si le falta espacio"}. Exporta una copia para
+          no perderla o para pasarla al móvil (no incluye tus claves de Ajustes).
+        </p>
+        <button disabled={busy} onClick={() => run(() => exportBackup(addLog))}>
+          Exportar copia
+        </button>
+        <label>
+          Restaurar una copia (.json)
+          <input type="file" accept=".json,application/json" onChange={(e) => setBackup(e.target.files?.[0] ?? null)} />
+        </label>
+        <button disabled={busy || !backup} onClick={() => run(() => restoreBackup(backup!, addLog))}>
+          Restaurar copia
         </button>
       </section>
 
