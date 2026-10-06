@@ -49,8 +49,8 @@ export default function Data({ settings, counts, log, busy, run, addLog }: Props
 
       <section>
         <h2>Anime y manga</h2>
-        <p className="hint">Lee tu lista pública de MyAnimeList{settings.malUser ? ` (${settings.malUser})` : ""}. Tarda unos minutos la primera vez.</p>
-        <button disabled={busy} onClick={() => run(() => importMal(settings.malUser, addLog))}>
+        <p className="hint">Lee tu lista pública de MyAnimeList{settings.malUser ? ` (${settings.malUser})` : ""}.</p>
+        <button disabled={busy} onClick={() => run(() => importMal(settings.malUser, settings.malClientId, addLog))}>
           Importar desde MyAnimeList
         </button>
       </section>
