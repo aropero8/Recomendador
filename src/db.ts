@@ -19,3 +19,26 @@ export async function upsert(item: Item) {
   }
   await db.items.put(item);
 }
+
+/**
+ * Como upsert, pero para muchos items en una sola transacción.
+ * `merge` permite conservar datos del item anterior (sinopsis ya completadas, etc.).
+ */
+export async function bulkUpsert(items: Item[], merge?: (item: Item, old: Item) => Item) {
+  await db.transaction("rw", db.items, async () => {
+    const olds = await db.items.bulkGet(items.map((i) => i.key));
+    const out = items.map((item, i) => {
+      const old = olds[i];
+      if (!old) return item;
+      const m = merge ? merge(item, old) : item;
+      if (old.embedding && old.synopsis === m.synopsis && old.title === m.title) m.embedding = old.embedding;
+      return m;
+    });
+    await db.items.bulkPut(out);
+  });
+}
+
+/** Control para detener un proceso largo (completar sinopsis…) y reanudarlo después. */
+export interface Stopper {
+  stopped: boolean;
+}

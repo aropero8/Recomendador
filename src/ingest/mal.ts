@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { upsert } from "../db";
+import { bulkUpsert } from "../db";
 import { getJson, HttpError, qs } from "../lib/http";
 import type { Item, Log, Status } from "../types";
 
@@ -48,9 +48,9 @@ export async function importMal(user: string, clientId: string, log: Log) {
   if (!clientId.trim()) throw new Error("Falta el Client ID de MyAnimeList (pestaña Ajustes).");
   for (const kind of ["anime", "manga"] as const) {
     const entries = await fetchList(kind, user.trim(), clientId.trim(), log);
-    for (const { node: m, list_status: ls } of entries) {
+    const items = entries.map(({ node: m, list_status: ls }): Item => {
       const alt = m.alternative_titles ?? {};
-      const item: Item = {
+      return {
         key: `${kind}:mal:${m.id}`,
         source: "mal",
         type: kind,
@@ -61,8 +61,8 @@ export async function importMal(user: string, clientId: string, log: Log) {
         status: STATUS[ls?.status] ?? "other",
         extra: { malId: m.id, altTitles: [...new Set([m.title, alt.en, alt.ja, ...(alt.synonyms ?? [])].filter(Boolean))] },
       };
-      await upsert(item);
-    }
+    });
+    await bulkUpsert(items);
     log(`${kind}: ${entries.length} importados`);
   }
 }

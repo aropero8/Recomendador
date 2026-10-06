@@ -9,6 +9,10 @@ Importa tus listas y consúltalas en el móvil. Todo se guarda en el dispositivo
 
 Pestañas: Biblioteca (buscar, filtrar, ordenar), Datos (importar), Ajustes (claves).
 
+Importar libros y películas tarda segundos: las sinopsis (Google Books / Open
+Library) y los datos de TMDB se traen después con los botones «Completar» de la
+pestaña Datos, que procesan solo lo pendiente y se pueden detener y reanudar.
+
 ## Fase 2 (pendiente): recomendador
 En `fase2-pendiente/` está el código ya escrito: embeddings locales, perfil de
 gustos y ranking. Falta la capa con LLM (Gemini con clave gratuita, más un botón

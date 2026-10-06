@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { db } from "../db";
+import { useMemo, useState } from "react";
 import { ITEM_TYPES, Item, ItemType, Status, TYPE_LABEL } from "../types";
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -17,17 +16,12 @@ const STATUS_FILTERS: [Status | "all", string][] = [
 ];
 const LIMIT = 150;
 
-export default function Library({ goData }: { goData: () => void }) {
-  const [items, setItems] = useState<Item[] | null>(null);
+export default function Library({ items, goData }: { items: Item[] | null; goData: () => void }) {
   const [type, setType] = useState<ItemType | "all">("all");
   const [status, setStatus] = useState<Status | "all">("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"score" | "title">("score");
   const [all, setAll] = useState(false);
-
-  useEffect(() => {
-    db.items.toArray().then(setItems);
-  }, []);
 
   const shown = useMemo(() => {
     if (!items) return [];

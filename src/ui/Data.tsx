@@ -1,22 +1,25 @@
 import { useState } from "react";
-import { importBooks } from "../ingest/books";
-import { importLetterboxd } from "../ingest/letterboxd";
+import type { Stopper } from "../db";
+import { completarSinopsis, importBooks } from "../ingest/books";
+import { completarPeliculas, importLetterboxd } from "../ingest/letterboxd";
 import { importMal } from "../ingest/mal";
 import type { Settings } from "../settings";
 import { ITEM_TYPES, ItemType, Log, TYPE_LABEL } from "../types";
 
-export type Counts = Record<ItemType, { total: number; rated: number }>;
+export type Counts = Record<ItemType, { total: number; rated: number; synopsis: number }>;
 
 interface Props {
   settings: Settings;
   counts: Counts;
   log: string[];
   busy: boolean;
-  run: (fn: () => Promise<void>) => Promise<void>;
+  run: (fn: (stop: Stopper) => Promise<void>, canStop?: boolean) => Promise<void>;
   addLog: Log;
+  stoppable: boolean;
+  onStop: () => void;
 }
 
-export default function Data({ settings, counts, log, busy, run, addLog }: Props) {
+export default function Data({ settings, counts, log, busy, run, addLog, stoppable, onStop }: Props) {
   const [zip, setZip] = useState<File | null>(null);
   const [leidos, setLeidos] = useState<File | null>(null);
   const [sinLeer, setSinLeer] = useState<File | null>(null);
@@ -31,6 +34,7 @@ export default function Data({ settings, counts, log, busy, run, addLog }: Props
               <th></th>
               <th>Total</th>
               <th>Con nota</th>
+              <th>Con sinopsis</th>
             </tr>
           </thead>
           <tbody>
@@ -41,6 +45,7 @@ export default function Data({ settings, counts, log, busy, run, addLog }: Props
                 </td>
                 <td>{counts[t]?.total ?? 0}</td>
                 <td>{counts[t]?.rated ?? 0}</td>
+                <td>{counts[t]?.synopsis ?? 0}</td>
               </tr>
             ))}
           </tbody>
@@ -59,8 +64,12 @@ export default function Data({ settings, counts, log, busy, run, addLog }: Props
         <h2>Películas</h2>
         <p className="hint">Elige el ZIP que exportas desde Letterboxd.</p>
         <input type="file" accept=".zip" onChange={(e) => setZip(e.target.files?.[0] ?? null)} />
-        <button disabled={busy || !zip} onClick={() => run(() => importLetterboxd(zip!, settings.tmdbKey, addLog))}>
+        <button disabled={busy || !zip} onClick={() => run(() => importLetterboxd(zip!, addLog))}>
           Importar películas
+        </button>
+        <p className="hint">Después, trae sinopsis y géneros de TMDB. Puedes detenerlo y reanudarlo cuando quieras.</p>
+        <button disabled={busy} onClick={() => run((stop) => completarPeliculas(settings.tmdbKey, addLog, stop), true)}>
+          Completar datos (películas)
         </button>
       </section>
 
@@ -76,9 +85,13 @@ export default function Data({ settings, counts, log, busy, run, addLog }: Props
         </label>
         <button
           disabled={busy || !leidos || !sinLeer}
-          onClick={() => run(() => importBooks(leidos!, sinLeer!, settings.sheets, settings.booksKey, addLog))}
+          onClick={() => run(() => importBooks(leidos!, sinLeer!, settings.sheets, addLog))}
         >
           Importar libros
+        </button>
+        <p className="hint">Después, busca las sinopsis en Google Books y Open Library. Puedes detenerlo y reanudarlo.</p>
+        <button disabled={busy} onClick={() => run((stop) => completarSinopsis(settings.booksKey, addLog, stop), true)}>
+          Completar sinopsis (libros)
         </button>
       </section>
 
@@ -86,6 +99,7 @@ export default function Data({ settings, counts, log, busy, run, addLog }: Props
         <section>
           <h2>Registro</h2>
           <pre className="log">{log.slice(-12).join("\n")}</pre>
+          {stoppable && <button onClick={onStop}>Detener</button>}
         </section>
       )}
     </div>

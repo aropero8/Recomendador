@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
-import { db, upsert } from "../db";
-import { getJson, qs } from "../lib/http";
+import { bulkUpsert, db, Stopper } from "../db";
+import { getJson, HttpError, qs } from "../lib/http";
 import { norm, slug } from "../lib/text";
 import type { Item, ItemType, Log, Status } from "../types";
 
@@ -74,11 +74,13 @@ function readSheets(buf: ArrayBuffer, only?: string[]): Row[] {
 
 // ---------- sinopsis ----------
 
+/** Lanza HttpError si Google responde con error (429 incluido, sin reintentar). */
 async function googleBooks(title: string, author: string, key: string) {
-  for (const q of [`intitle:${title} inauthor:${author}`, `intitle:${title}`]) {
+  const queries = author ? [`intitle:${title} inauthor:${author}`, `intitle:${title}`] : [`intitle:${title}`];
+  for (const q of queries) {
     const js = await getJson(
       `https://www.googleapis.com/books/v1/volumes?${qs({ q, maxResults: 3, key })}`,
-      { delay: 300 },
+      { delay: 300, strict: true, retry429: false },
     );
     for (const it of js?.items ?? []) {
       const v = it.volumeInfo;
@@ -89,7 +91,10 @@ async function googleBooks(title: string, author: string, key: string) {
 }
 
 async function openLibrary(title: string, author: string) {
-  const s = await getJson(`https://openlibrary.org/search.json?${qs({ title, author, limit: 1 })}`, { delay: 300 });
+  // La búsqueda general (q) encuentra también las ediciones traducidas; title=/author= no
+  const s = await getJson(`https://openlibrary.org/search.json?${qs({ q: `${title} ${author}`.trim(), limit: 1, fields: "key" })}`, {
+    delay: 300,
+  });
   const doc = s?.docs?.[0];
   if (!doc) return null;
   const w = await getJson(`https://openlibrary.org${doc.key}.json`, { delay: 300 });
@@ -98,8 +103,61 @@ async function openLibrary(title: string, author: string) {
   return d ? { desc: d as string, cats: ((w?.subjects ?? []) as string[]).slice(0, 5) } : null;
 }
 
-async function lookup(title: string, author: string, key: string) {
-  return (await googleBooks(title, author, key)) ?? (await openLibrary(title, author)) ?? { desc: "", cats: [] };
+/**
+ * Busca la sinopsis de los libros que no la tienen. Se puede detener y reanudar:
+ * los ya intentados quedan marcados y no se repiten.
+ * Si Google limita las peticiones (429), sigue solo con Open Library; lo que Open Library
+ * no encuentre queda pendiente de Google para otra pasada.
+ */
+export async function completarSinopsis(booksKey: string, log: Log, stop: Stopper) {
+  const todo = (await db.items.where("source").equals("excel").toArray()).filter(
+    (i) => !i.synopsis && !i.extra.lookupDone,
+  );
+  if (!todo.length) return log("libros: no queda ninguna sinopsis por buscar");
+  log(`libros: buscando sinopsis de ${todo.length} títulos`);
+
+  let google = true;
+  let found = 0;
+  let waiting = 0; // ya probados en Open Library, a la espera de Google
+  for (const [n, it] of todo.entries()) {
+    if (stop.stopped) return log(`libros: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
+    if (!google && it.extra.olTried) {
+      waiting++;
+      continue;
+    }
+    const author = String(it.extra.author ?? "").split("/")[0].trim(); // varios autores: el primero
+    let r: { desc: string; cats: string[] } | null = null;
+    const triedGoogle = google;
+    if (google) {
+      try {
+        r = await googleBooks(it.title, author, booksKey);
+      } catch (e) {
+        if (!(e instanceof HttpError)) throw e;
+        google = false;
+        log(
+          e.status === 429
+            ? "Google Books limita las peticiones (429): sigo solo con Open Library"
+            : `Google Books responde ${e.status}: sigo solo con Open Library`,
+        );
+      }
+    }
+    let olTried = !!it.extra.olTried;
+    if (!r && !olTried) {
+      r = await openLibrary(it.title, author);
+      olTried = true;
+    }
+    if (r) found++;
+    // Si no se encontró y Google estaba bloqueado, se deja pendiente para otra pasada
+    const done = !!r || (triedGoogle && google);
+    await db.items.update(it.key, {
+      synopsis: r?.desc ?? "",
+      genres: [...it.genres, ...(r?.cats ?? [])],
+      extra: { ...it.extra, cats: r?.cats ?? [], lookupDone: done, olTried },
+      embedding: undefined,
+    });
+    if ((n + 1) % 5 === 0 || n + 1 === todo.length) log(`libros: ${n + 1}/${todo.length} (${found} con sinopsis)`);
+  }
+  if (waiting) log(`libros: ${waiting} sin encontrar en Open Library quedan pendientes de Google Books`);
 }
 
 // ---------- agrupado de tomos de manga por serie ----------
@@ -131,7 +189,7 @@ function groupManga(rows: Row[]): Entry[] {
 
 // ---------- importación ----------
 
-export async function importBooks(readFile: File, unreadFile: File, sheetsCsv: string, booksKey: string, log: Log) {
+export async function importBooks(readFile: File, unreadFile: File, sheetsCsv: string, log: Log) {
   const read = groupManga(readSheets(await readFile.arrayBuffer()));
   const only = sheetsCsv.split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -150,30 +208,23 @@ export async function importBooks(readFile: File, unreadFile: File, sheetsCsv: s
     ...[...best.values()].map((r) => ({ e: { ...r, type: "book" as ItemType }, status: "plan" as Status })),
   ];
 
-  let n = 0;
-  for (const { e, status } of entries) {
-    const key = `${e.type}:excel:${slug(e.title + "_" + e.author)}`;
-    const old = await db.items.get(key);
-    let synopsis = old?.synopsis ?? "";
-    let cats: string[] = old?.extra.cats ?? [];
-    if (!old || !old.synopsis) {
-      const r = await lookup(e.title, e.author, booksKey);
-      synopsis = r.desc;
-      cats = r.cats;
-    }
-    const item: Item = {
-      key,
-      source: "excel",
-      type: e.type,
-      title: e.title,
-      synopsis,
-      genres: [...e.genres, ...cats],
-      userScore: status === "plan" ? null : e.rating,
-      status,
-      extra: { author: e.author, pages: e.pages, format: e.format, yearRead: e.year, priority: status === "plan" ? e.priority : null, volumes: e.volumes, cats },
-    };
-    await upsert(item);
-    if (++n % 20 === 0) log(`libros/manga: ${n}/${entries.length}`);
-  }
-  log(`libros/manga: ${entries.length} importados`);
+  const items: Item[] = entries.map(({ e, status }) => ({
+    key: `${e.type}:excel:${slug(e.title + "_" + e.author)}`,
+    source: "excel",
+    type: e.type,
+    title: e.title,
+    synopsis: "",
+    genres: e.genres,
+    userScore: status === "plan" ? null : e.rating,
+    status,
+    extra: { author: e.author, pages: e.pages, format: e.format, yearRead: e.year, priority: status === "plan" ? e.priority : null, volumes: e.volumes },
+  }));
+  // Sin buscar sinopsis aquí (ver completarSinopsis); se conserva la que ya hubiera
+  await bulkUpsert(items, (item, old) => ({
+    ...item,
+    synopsis: old.synopsis,
+    genres: [...item.genres, ...(old.extra.cats ?? [])],
+    extra: { ...item.extra, cats: old.extra.cats, lookupDone: old.extra.lookupDone },
+  }));
+  log(`libros/manga: ${items.length} importados. Usa «Completar sinopsis» para buscar las sinopsis.`);
 }
