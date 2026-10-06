@@ -1,0 +1,26 @@
+node_modules
+dist
+android
+
+# datos personales: nunca al repositorio
+*.xlsx
+*.xls
+*.xlsm
+*.ods
+*.zip
+*.csv
+*.tsv
+.env
+.env.*
+data/
+export*.json
+backup*.json
+
+# claves de firma de Android y rutas locales
+*.jks
+*.keystore
+local.properties
+
+# logs y configuración local
+*.log
+.claude/settings.local.json
