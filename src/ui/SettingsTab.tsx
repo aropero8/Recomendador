@@ -33,7 +33,7 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
         <h2>Créditos</h2>
         <p className="hint">
           Esta aplicación usa la API de TMDB, pero no está avalada ni certificada por TMDB. Datos de anime y manga
-          de la API oficial de MyAnimeList; libros de Open Library.
+          de la API oficial de MyAnimeList; libros de Open Library. Resúmenes de Wikipedia (CC BY-SA).
         </p>
       </section>
     </div>

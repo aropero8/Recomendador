@@ -4,15 +4,16 @@
 Importa tus listas y consúltalas en el móvil. Todo se guarda en el dispositivo.
 - MyAnimeList (anime y manga) con la API oficial v2 (necesita un Client ID)
 - Letterboxd (ZIP) + TMDB
-- Libros (dos Excel) + Open Library (sin claves ni cuentas)
+- Libros (dos Excel) + Wikipedia y Open Library (sin claves ni cuentas)
 - Los tomos de manga del Excel se agrupan por serie; las series que ya están en tu
-  lista de MAL no se buscan en Open Library
+  lista de MAL no se buscan
 
 Pestañas: Biblioteca (buscar, filtrar, ordenar), Datos (importar), Ajustes (claves).
 
-Importar libros y películas tarda segundos: las sinopsis (Open Library) y los
-datos de TMDB se traen después con los botones «Completar» de la pestaña Datos,
-que procesan solo lo pendiente y se pueden detener y reanudar.
+Importar libros y películas tarda segundos: las sinopsis (Wikipedia en español,
+Open Library y Wikipedia en inglés, por ese orden) y los datos de TMDB se traen
+después con los botones «Completar» de la pestaña Datos, que procesan solo lo
+pendiente y se pueden detener y reanudar.
 
 ## Fase 2 (pendiente): recomendador
 En `fase2-pendiente/` está el código ya escrito: embeddings locales, perfil de
@@ -55,5 +56,8 @@ excluye Excel, ZIP, CSV y `.env`.
 - Esta aplicación usa la API de TMDB, pero no está avalada ni certificada por TMDB.
 - Anime y manga: [API oficial de MyAnimeList](https://myanimelist.net/apiconfig/references/api/v2).
 - Libros: [Open Library](https://openlibrary.org).
+- Resúmenes de Wikipedia (CC BY-SA): los textos de [Wikipedia](https://www.wikipedia.org)
+  se usan bajo licencia [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.es);
+  la app guarda el enlace al artículo de origen de cada resumen.
 - Modelo de embeddings (Fase 2): multilingual-e5-small (MIT).
 - Código bajo licencia MIT (ver `LICENSE`).
