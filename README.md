@@ -4,14 +4,15 @@
 Importa tus listas y consúltalas en el móvil. Todo se guarda en el dispositivo.
 - MyAnimeList (anime y manga) con la API oficial v2 (necesita un Client ID)
 - Letterboxd (ZIP) + TMDB
-- Libros (dos Excel) + Google Books / Open Library
-- Los tomos de manga del Excel se agrupan por serie y se funden con MAL si coinciden
+- Libros (dos Excel) + Open Library (sin claves ni cuentas)
+- Los tomos de manga del Excel se agrupan por serie; las series que ya están en tu
+  lista de MAL no se buscan en Open Library
 
 Pestañas: Biblioteca (buscar, filtrar, ordenar), Datos (importar), Ajustes (claves).
 
-Importar libros y películas tarda segundos: las sinopsis (Google Books / Open
-Library) y los datos de TMDB se traen después con los botones «Completar» de la
-pestaña Datos, que procesan solo lo pendiente y se pueden detener y reanudar.
+Importar libros y películas tarda segundos: las sinopsis (Open Library) y los
+datos de TMDB se traen después con los botones «Completar» de la pestaña Datos,
+que procesan solo lo pendiente y se pueden detener y reanudar.
 
 ## Fase 2 (pendiente): recomendador
 En `fase2-pendiente/` está el código ya escrito: embeddings locales, perfil de
@@ -45,6 +46,6 @@ excluye Excel, ZIP, CSV y `.env`.
 ## Créditos y licencias
 - Esta aplicación usa la API de TMDB, pero no está avalada ni certificada por TMDB.
 - Anime y manga: [API oficial de MyAnimeList](https://myanimelist.net/apiconfig/references/api/v2).
-- Libros: Google Books API y Open Library.
+- Libros: [Open Library](https://openlibrary.org).
 - Modelo de embeddings (Fase 2): multilingual-e5-small (MIT).
 - Código bajo licencia MIT (ver `LICENSE`).

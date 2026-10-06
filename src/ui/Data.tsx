@@ -89,8 +89,8 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
         >
           Importar libros
         </button>
-        <p className="hint">Después, busca las sinopsis en Google Books y Open Library. Puedes detenerlo y reanudarlo.</p>
-        <button disabled={busy} onClick={() => run((stop) => completarSinopsis(settings.booksKey, addLog, stop), true)}>
+        <p className="hint">Después, busca las sinopsis en Open Library (una petición por segundo). Puedes detenerlo y reanudarlo.</p>
+        <button disabled={busy} onClick={() => run((stop) => completarSinopsis(addLog, stop), true)}>
           Completar sinopsis (libros)
         </button>
       </section>

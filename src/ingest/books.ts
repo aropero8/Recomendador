@@ -72,92 +72,118 @@ function readSheets(buf: ArrayBuffer, only?: string[]): Row[] {
   return out;
 }
 
-// ---------- sinopsis ----------
+// ---------- sinopsis (Open Library) ----------
 
-/** Lanza HttpError si Google responde con error (429 incluido, sin reintentar). */
-async function googleBooks(title: string, author: string, key: string) {
-  const queries = author ? [`intitle:${title} inauthor:${author}`, `intitle:${title}`] : [`intitle:${title}`];
-  for (const q of queries) {
-    const js = await getJson(
-      `https://www.googleapis.com/books/v1/volumes?${qs({ q, maxResults: 3, key })}`,
-      { delay: 300, strict: true, retry429: false },
-    );
-    for (const it of js?.items ?? []) {
-      const v = it.volumeInfo;
-      if (v?.description) return { desc: v.description as string, cats: (v.categories ?? []) as string[] };
-    }
+const OL = "https://openlibrary.org";
+const OL_FIELDS = "key,title,author_name,subject,first_sentence,language";
+const OL_GAP = 1000; // como mucho una petición por segundo
+let lastOl = 0;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function olGet(path: string) {
+  const wait = lastOl + OL_GAP - Date.now();
+  if (wait > 0) await sleep(wait);
+  lastOl = Date.now();
+  try {
+    return await getJson(OL + path, { strict: true });
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 404) return null;
+    if (e instanceof HttpError) throw new Error(`Open Library no responde (${e.status}). Pulsa de nuevo para reanudar.`);
+    throw e;
+  }
+}
+
+const words = (s: unknown) => ` ${norm(s).replace(/[^a-z0-9]+/g, " ").trim()} `;
+
+/** 2 = mismo título, 1 = uno contiene al otro (palabras completas), 0 = distintos. Sin tildes ni mayúsculas. */
+export function titleMatch(a: unknown, b: unknown) {
+  const x = words(a);
+  const y = words(b);
+  if (!x.trim() || !y.trim()) return 0;
+  if (x === y) return 2;
+  return x.includes(y) || y.includes(x) ? 1 : 0;
+}
+
+function editDistance(a: string, b: string) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Autor parecido aunque esté mal escrito (Kaztenbach ~ Katzenbach): alguna palabra a ≤ 2 letras. */
+function authorMatch(excel: string, names: string[] = []) {
+  const toks = (s: string) => words(s).trim().split(" ").filter((w) => w.length >= 4);
+  const mine = toks(excel);
+  return names.some((n) => toks(n).some((t) => mine.some((m) => editDistance(m, t) <= 2)));
+}
+
+async function openLibrary(title: string, author: string) {
+  // Primero título + autor; si nada encaja, solo título (los autores del Excel pueden estar mal escritos)
+  for (const p of author ? [{ title, author }, { title }] : [{ title }]) {
+    const js = await olGet(`/search.json?${qs({ ...p, limit: 5, fields: OL_FIELDS })}`);
+    // De los 5 resultados, los que coinciden exactamente antes que los que solo contienen el título.
+    // Buscando solo por título, el autor tiene que parecerse para no coger otro libro con el mismo nombre.
+    const ok: any[] = (js?.docs ?? [])
+      .filter((d: any) => !author || p.author || authorMatch(author, d.author_name))
+      .map((d: any) => ({ d, m: titleMatch(title, d.title) }))
+      .filter((x: any) => x.m > 0)
+      .sort((a: any, b: any) => b.m - a.m)
+      .map((x: any) => x.d);
+    if (!ok.length) continue;
+
+    const w = await olGet(`${ok[0].key}.json`);
+    let desc = w?.description ?? "";
+    if (typeof desc === "object") desc = desc.value ?? "";
+    // Open Library suele repetir el mismo libro en varias obras: primera frase y temas de cualquiera de ellas
+    if (!desc) desc = ok.find((d) => d.first_sentence?.length)?.first_sentence[0] ?? "";
+    const subjects = [...new Set(ok.flatMap((d) => (d.subject ?? []) as string[]))].slice(0, 10);
+    return { desc: String(desc).trim(), subjects };
   }
   return null;
 }
 
-async function openLibrary(title: string, author: string) {
-  // La búsqueda general (q) encuentra también las ediciones traducidas; title=/author= no
-  const s = await getJson(`https://openlibrary.org/search.json?${qs({ q: `${title} ${author}`.trim(), limit: 1, fields: "key" })}`, {
-    delay: 300,
-  });
-  const doc = s?.docs?.[0];
-  if (!doc) return null;
-  const w = await getJson(`https://openlibrary.org${doc.key}.json`, { delay: 300 });
-  let d = w?.description ?? "";
-  if (typeof d === "object") d = d.value ?? "";
-  return d ? { desc: d as string, cats: ((w?.subjects ?? []) as string[]).slice(0, 5) } : null;
-}
-
 /**
- * Busca la sinopsis de los libros que no la tienen. Se puede detener y reanudar:
- * los ya intentados quedan marcados y no se repiten.
- * Si Google limita las peticiones (429), sigue solo con Open Library; lo que Open Library
- * no encuentre queda pendiente de Google para otra pasada.
+ * Busca en Open Library la sinopsis de los libros que no la tienen. Se puede detener y
+ * reanudar: los ya consultados quedan marcados (extra.olChecked) y no se repiten.
+ * No busca las series de manga que ya están en la lista de MAL.
  */
-export async function completarSinopsis(booksKey: string, log: Log, stop: Stopper) {
-  const todo = (await db.items.where("source").equals("excel").toArray()).filter(
-    (i) => !i.synopsis && !i.extra.lookupDone,
-  );
-  if (!todo.length) return log("libros: no queda ninguna sinopsis por buscar");
-  log(`libros: buscando sinopsis de ${todo.length} títulos`);
+export async function completarSinopsis(log: Log, stop: Stopper) {
+  const all = await db.items.toArray();
+  const malManga = all.filter((i) => i.source === "mal" && i.type === "manga").flatMap((i) => [i.title, ...(i.extra.altTitles ?? [])]);
+  const inMal = (it: Item) => it.type === "manga" && malManga.some((t) => titleMatch(it.title, t) === 2);
 
-  let google = true;
+  const books = all.filter((i) => i.source === "excel");
+  const skipped = books.filter(inMal).length;
+  if (skipped) log(`libros: ${skipped} series de manga ya están en MAL; no se buscan`);
+  const todo = books.filter((i) => !i.synopsis && !i.extra.olChecked && !inMal(i));
+  if (!todo.length) log("libros: no queda ninguna sinopsis por buscar");
+  else log(`libros: buscando ${todo.length} títulos en Open Library (1 petición por segundo)`);
+
   let found = 0;
-  let waiting = 0; // ya probados en Open Library, a la espera de Google
   for (const [n, it] of todo.entries()) {
     if (stop.stopped) return log(`libros: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
-    if (!google && it.extra.olTried) {
-      waiting++;
-      continue;
-    }
     const author = String(it.extra.author ?? "").split("/")[0].trim(); // varios autores: el primero
-    let r: { desc: string; cats: string[] } | null = null;
-    const triedGoogle = google;
-    if (google) {
-      try {
-        r = await googleBooks(it.title, author, booksKey);
-      } catch (e) {
-        if (!(e instanceof HttpError)) throw e;
-        google = false;
-        log(
-          e.status === 429
-            ? "Google Books limita las peticiones (429): sigo solo con Open Library"
-            : `Google Books responde ${e.status}: sigo solo con Open Library`,
-        );
-      }
-    }
-    let olTried = !!it.extra.olTried;
-    if (!r && !olTried) {
-      r = await openLibrary(it.title, author);
-      olTried = true;
-    }
-    if (r) found++;
-    // Si no se encontró y Google estaba bloqueado, se deja pendiente para otra pasada
-    const done = !!r || (triedGoogle && google);
+    const r = await openLibrary(it.title, author);
+    if (r?.desc) found++;
+    const subjects = r?.subjects ?? [];
+    const { cats = [], lookupDone, olTried, ...extra } = it.extra; // cats/flags de versiones anteriores
+    const excelGenres = it.genres.filter((g) => !cats.includes(g));
     await db.items.update(it.key, {
       synopsis: r?.desc ?? "",
-      genres: [...it.genres, ...(r?.cats ?? [])],
-      extra: { ...it.extra, cats: r?.cats ?? [], lookupDone: done, olTried },
+      genres: [...new Set([...excelGenres, ...subjects])],
+      extra: { ...extra, cats: subjects, olChecked: true },
       embedding: undefined,
     });
     if ((n + 1) % 5 === 0 || n + 1 === todo.length) log(`libros: ${n + 1}/${todo.length} (${found} con sinopsis)`);
   }
-  if (waiting) log(`libros: ${waiting} sin encontrar en Open Library quedan pendientes de Google Books`);
+
+  const missing = (await db.items.where("source").equals("excel").toArray()).filter((i) => !i.synopsis && !inMal(i));
+  if (todo.length) log(`libros: ${found} sinopsis encontradas de ${todo.length} buscadas`);
+  log(missing.length ? `libros sin sinopsis (${missing.length}): ${missing.map((i) => i.title).join(" · ")}` : "libros: todos tienen sinopsis");
 }
 
 // ---------- agrupado de tomos de manga por serie ----------
@@ -224,7 +250,7 @@ export async function importBooks(readFile: File, unreadFile: File, sheetsCsv: s
     ...item,
     synopsis: old.synopsis,
     genres: [...item.genres, ...(old.extra.cats ?? [])],
-    extra: { ...item.extra, cats: old.extra.cats, lookupDone: old.extra.lookupDone },
+    extra: { ...item.extra, cats: old.extra.cats, olChecked: old.extra.olChecked },
   }));
   log(`libros/manga: ${items.length} importados. Usa «Completar sinopsis» para buscar las sinopsis.`);
 }

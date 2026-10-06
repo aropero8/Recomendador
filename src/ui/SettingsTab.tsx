@@ -22,10 +22,6 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
           <input value={s.tmdbKey} onChange={set("tmdbKey")} type="password" autoCapitalize="none" />
         </label>
         <label>
-          API key de Google Books (opcional)
-          <input value={s.booksKey} onChange={set("booksKey")} type="password" autoCapitalize="none" />
-        </label>
-        <label>
           Pestañas de «Sin leer» a usar (vacío = todas)
           <input value={s.sheets} onChange={set("sheets")} />
         </label>
@@ -37,7 +33,7 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
         <h2>Créditos</h2>
         <p className="hint">
           Esta aplicación usa la API de TMDB, pero no está avalada ni certificada por TMDB. Datos de anime y manga
-          de la API oficial de MyAnimeList; libros de Google Books y Open Library.
+          de la API oficial de MyAnimeList; libros de Open Library.
         </p>
       </section>
     </div>
