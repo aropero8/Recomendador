@@ -1,7 +1,9 @@
 import { liveQuery } from "dexie";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { requestPersistence } from "./backup";
-import { db, Stopper } from "./db";
+import { useUserCovers } from "./covers/user";
+import { fusionarManga } from "./merge";
+import { db, isQuotaError, limpiarBaseDeDatos, quotaMessage, StorageInfo, storageInfo, Stopper } from "./db";
 import { useNav, View } from "./nav";
 import { loadSettings, saveSettings, Settings } from "./settings";
 import { Item, ITEM_TYPES, TYPE_LABEL } from "./types";
@@ -22,15 +24,32 @@ export default function App() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [stoppable, setStoppable] = useState(false); // hay un proceso largo que se puede detener
   const stopper = useRef<Stopper>({ stopped: false });
-  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
   const main = useRef<HTMLElement>(null);
   const prev = useRef<View>(view);
 
   const addLog = useCallback((m: string) => setLog((l) => [...l.slice(-60), m]), []);
+  const userCovers = useUserCovers();
+
+  // Lo que se muestra: manga repetido (Excel + MAL) fundido y portadas elegidas a mano por encima de las automáticas
+  const shown = useMemo(
+    () =>
+      items &&
+      fusionarManga(items).map((i) =>
+        userCovers.has(i.key) ? { ...i, cover: userCovers.get(i.key), extra: { ...i.extra, customCover: true } } : i,
+      ),
+    [items, userCovers],
+  );
 
   useEffect(() => {
     loadSettings().then(setSettings);
-    requestPersistence().then(setPersisted).catch(() => setPersisted(null));
+    // Pide almacenamiento persistente, corrige registros mal guardados y mide el espacio usado
+    requestPersistence()
+      .catch(() => null)
+      .then(() => limpiarBaseDeDatos(addLog))
+      .catch(async (e) => addLog(isQuotaError(e) ? await quotaMessage() : `Error al revisar la base de datos: ${e?.message ?? e}`))
+      .then(() => storageInfo())
+      .then(setStorage, () => setStorage(null));
     // Se actualiza solo cada vez que cambia la base de datos (también durante una importación)
     const sub = liveQuery(() => db.items.toArray()).subscribe({
       next: setItems,
@@ -57,7 +76,7 @@ export default function App() {
   const counts = useMemo(() => {
     const c = {} as Counts;
     for (const t of ITEM_TYPES) {
-      const xs = (items ?? []).filter((i) => i.type === t);
+      const xs = (shown ?? []).filter((i) => i.type === t);
       c[t] = {
         total: xs.length,
         rated: xs.filter((i) => i.userScore != null).length,
@@ -66,7 +85,7 @@ export default function App() {
       };
     }
     return c;
-  }, [items]);
+  }, [shown]);
 
   const run = async (fn: (stop: Stopper) => Promise<void>, canStop = false) => {
     stopper.current = { stopped: false };
@@ -75,10 +94,11 @@ export default function App() {
     try {
       await fn(stopper.current);
     } catch (e: any) {
-      addLog(`Error: ${e?.message ?? e}`);
+      addLog(isQuotaError(e) ? await quotaMessage() : `Error: ${e?.message ?? e}`);
     } finally {
       setBusy(false);
       setStoppable(false);
+      storageInfo().then(setStorage, () => null);
     }
   };
 
@@ -118,8 +138,8 @@ export default function App() {
       </header>
 
       <main ref={main} className={catType ? "wide" : ""}>
-        {view.v === "home" && <Home items={items} openCategory={(type) => go({ v: "cat", type })} openData={() => go({ v: "data" })} />}
-        {catType && <Category items={items ?? []} type={catType} onOpen={(key) => go({ v: "item", type: catType, key })} />}
+        {view.v === "home" && <Home items={shown} openCategory={(type) => go({ v: "cat", type })} openData={() => go({ v: "data" })} />}
+        {catType && <Category items={shown ?? []} type={catType} onOpen={(key) => go({ v: "item", type: catType, key })} />}
         {view.v === "data" && (
           <div className="narrow">
             <Data
@@ -130,7 +150,7 @@ export default function App() {
               run={run}
               addLog={addLog}
               stoppable={stoppable}
-              persisted={persisted}
+              storage={storage}
               onStop={() => (stopper.current.stopped = true)}
             />
           </div>
@@ -149,7 +169,7 @@ export default function App() {
         )}
       </main>
 
-      {view.v === "item" && <Detail item={items?.find((i) => i.key === view.key)} onBack={back} />}
+      {view.v === "item" && <Detail item={shown?.find((i) => i.key === view.key)} settings={settings} onBack={back} />}
     </div>
   );
 }

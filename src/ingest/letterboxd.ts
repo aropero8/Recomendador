@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import Papa from "papaparse";
-import { bulkUpsert, db, Stopper } from "../db";
+import { BatchWriter, bulkUpsert, db, Stopper } from "../db";
 import { getJson, HttpError, qs } from "../lib/http";
 import type { Item, Log, Status } from "../types";
 
@@ -79,22 +79,27 @@ const poster = (path?: string | null) => (path ? `https://image.tmdb.org/t/p/w34
 /** Películas ya completadas antes de guardar pósters: solo se pide /movie/{tmdbId}, sin volver a buscarlas. */
 export async function completarPosters(tmdbKey: string, todo: Item[], log: Log, stop: Stopper) {
   log(`películas: buscando el póster de ${todo.length} ya completadas`);
+  const out = new BatchWriter();
   let found = 0;
-  for (const [n, it] of todo.entries()) {
-    if (stop.stopped) return false;
-    let d: any = null;
-    try {
-      d = await getJson(`${T}/movie/${it.extra.tmdbId}?${qs({ api_key: tmdbKey })}`, { delay: 60, strict: true });
-    } catch (e) {
-      if (e instanceof HttpError && e.status === 401) throw new Error("TMDB rechaza la API key. Revísala en Ajustes.");
-      if (!(e instanceof HttpError && e.status === 404)) throw e;
+  try {
+    for (const [n, it] of todo.entries()) {
+      if (stop.stopped) return false;
+      let d: any = null;
+      try {
+        d = await getJson(`${T}/movie/${it.extra.tmdbId}?${qs({ api_key: tmdbKey })}`, { delay: 60, strict: true });
+      } catch (e) {
+        if (e instanceof HttpError && e.status === 401) throw new Error("TMDB rechaza la API key. Revísala en Ajustes.");
+        if (!(e instanceof HttpError && e.status === 404)) throw e;
+      }
+      const cover = poster(d?.poster_path);
+      if (cover) found++;
+      await out.put({ ...it, cover, extra: { ...it.extra, posterChecked: true } });
+      if ((n + 1) % 50 === 0 || n + 1 === todo.length) log(`películas: pósters ${n + 1}/${todo.length} (${found} encontrados)`);
     }
-    const cover = poster(d?.poster_path);
-    if (cover) found++;
-    await db.items.update(it.key, { cover, extra: { ...it.extra, posterChecked: true } });
-    if ((n + 1) % 50 === 0 || n + 1 === todo.length) log(`películas: pósters ${n + 1}/${todo.length} (${found} encontrados)`);
+    return true;
+  } finally {
+    await out.flush();
   }
-  return true;
 }
 
 /** Trae sinopsis, géneros, póster, director, reparto y plataformas de TMDB. Se puede detener y reanudar. */
@@ -109,36 +114,41 @@ export async function completarPeliculas(tmdbKey: string, log: Log, stop: Stoppe
   if (!todo.length) return;
   log(`películas: completando ${todo.length} con TMDB`);
 
+  const out = new BatchWriter();
   let found = 0;
-  for (const [n, it] of todo.entries()) {
-    if (stop.stopped) return log(`películas: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
-    const id = await findMovie(tmdbKey, it.title, it.extra.year);
-    const d =
-      id &&
-      (await getJson(
-        `${T}/movie/${id}?${qs({ api_key: tmdbKey, language: "en-US", append_to_response: "credits,watch/providers" })}`,
-        { delay: 60 },
-      ));
-    if (d) {
-      found++;
-      await db.items.update(it.key, {
-        synopsis: d.overview ?? "",
-        genres: (d.genres ?? []).map((g: any) => g.name),
-        cover: poster(d.poster_path),
-        extra: {
-          ...it.extra,
-          tmdbDone: true,
-          posterChecked: true,
-          tmdbId: id,
-          director: (d.credits?.crew ?? []).filter((c: any) => c.job === "Director").map((c: any) => c.name).join(", "),
-          cast: (d.credits?.cast ?? []).slice(0, 5).map((c: any) => c.name),
-          providersEs: (d["watch/providers"]?.results?.ES?.flatrate ?? []).map((p: any) => p.provider_name),
-        },
-        embedding: undefined,
-      });
-    } else {
-      await db.items.update(it.key, { extra: { ...it.extra, tmdbDone: true } });
+  try {
+    for (const [n, it] of todo.entries()) {
+      if (stop.stopped) return log(`películas: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
+      const id = await findMovie(tmdbKey, it.title, it.extra.year);
+      const d =
+        id &&
+        (await getJson(
+          `${T}/movie/${id}?${qs({ api_key: tmdbKey, language: "en-US", append_to_response: "credits,watch/providers" })}`,
+          { delay: 60 },
+        ));
+      if (d) {
+        found++;
+        await out.put({
+          ...it,
+          synopsis: d.overview ?? "",
+          genres: (d.genres ?? []).map((g: any) => g.name),
+          cover: poster(d.poster_path),
+          extra: {
+            ...it.extra,
+            tmdbDone: true,
+            posterChecked: true,
+            tmdbId: id,
+            director: (d.credits?.crew ?? []).filter((c: any) => c.job === "Director").map((c: any) => c.name).join(", "),
+            cast: (d.credits?.cast ?? []).slice(0, 5).map((c: any) => c.name),
+            providersEs: (d["watch/providers"]?.results?.ES?.flatrate ?? []).map((p: any) => p.provider_name),
+          },
+        });
+      } else {
+        await out.put({ ...it, extra: { ...it.extra, tmdbDone: true } });
+      }
+      if ((n + 1) % 10 === 0 || n + 1 === todo.length) log(`películas: ${n + 1}/${todo.length} (${found} encontradas en TMDB)`);
     }
-    if ((n + 1) % 10 === 0 || n + 1 === todo.length) log(`películas: ${n + 1}/${todo.length} (${found} encontradas en TMDB)`);
+  } finally {
+    await out.flush();
   }
 }

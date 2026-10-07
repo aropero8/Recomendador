@@ -2,6 +2,7 @@ import type { Stopper } from "../db";
 import type { Settings } from "../settings";
 import type { Log } from "../types";
 import { completarLibros } from "./books";
+import { limpiarBaseDeDatos } from "../db";
 import { arreglarUrlsOpenLibrary, portadasLibros, portadasMal, portadasMangaExcel, portadasPeliculas, resumenPortadas, step } from "./covers";
 
 /**
@@ -13,7 +14,8 @@ import { arreglarUrlsOpenLibrary, portadasLibros, portadasMal, portadasMangaExce
  * Cada paso es independiente: si uno falla se apunta y se sigue.
  */
 export async function completarDatos(s: Settings, log: Log, stop: Stopper) {
-  await arreglarUrlsOpenLibrary();
+  await step("limpieza", log, stop, () => limpiarBaseDeDatos(log));
+  await step("limpieza", log, stop, arreglarUrlsOpenLibrary);
   await step("películas", log, stop, () => portadasPeliculas(s, log, stop));
   await step("MAL", log, stop, () => portadasMal(s, log, stop));
   await step("manga", log, stop, () => portadasMangaExcel(s, log, stop));

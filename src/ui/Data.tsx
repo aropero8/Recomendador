@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { exportBackup, restoreBackup } from "../backup";
-import type { Stopper } from "../db";
+import { mb, StorageInfo, Stopper } from "../db";
 import { importBooks } from "../ingest/books";
 import { completarDatos } from "../ingest/complete";
 import { descargarPortadas } from "../ingest/covers";
@@ -20,10 +20,10 @@ interface Props {
   addLog: Log;
   stoppable: boolean;
   onStop: () => void;
-  persisted: boolean | null;
+  storage: StorageInfo | null;
 }
 
-export default function Data({ settings, counts, log, busy, run, addLog, stoppable, onStop, persisted }: Props) {
+export default function Data({ settings, counts, log, busy, run, addLog, stoppable, onStop, storage }: Props) {
   const [zip, setZip] = useState<File | null>(null);
   const [leidos, setLeidos] = useState<File | null>(null);
   const [sinLeer, setSinLeer] = useState<File | null>(null);
@@ -122,10 +122,15 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
         <h2>Copia de seguridad</h2>
         <p className="hint">
           Tu biblioteca se guarda en este navegador
-          {persisted === true && " y está protegida para que no se borre por falta de espacio"}
-          {persisted === false && ", pero el navegador puede borrarla si le falta espacio"}. Exporta una copia para
+          {storage?.persisted === true && " y está protegida para que no se borre por falta de espacio"}
+          {storage?.persisted === false && ", pero el navegador puede borrarla si le falta espacio"}. Exporta una copia para
           no perderla o para pasarla al móvil (no incluye tus claves de Ajustes).
         </p>
+        {storage && (
+          <p className="hint">
+            Espacio usado: <strong>{mb(storage.usage)} MB</strong> de {mb(storage.quota)} MB disponibles para este sitio.
+          </p>
+        )}
         <button disabled={busy} onClick={() => run(() => exportBackup(addLog))}>
           Exportar copia
         </button>
