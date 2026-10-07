@@ -78,8 +78,23 @@ las peticiones pasan por el proxy de `npm run dev` (`/mal-api`); en Android van
 directas. Con `npm run preview` o una web estática la importación de MAL no funciona.
 
 ## Android
-    npx cap add android   # solo la primera vez (necesita Android Studio)
-    npm run android       # compila, sincroniza y abre Android Studio
+La carpeta `android/` está en el repositorio (proyecto de Capacitor 7). Hace falta
+**JDK 21** (Gradle 8.11 no funciona con Java 25) y el Android SDK con la
+plataforma 35 (Gradle la descarga si la licencia está aceptada).
+
+    npm run build && npx cap sync android     # copia la web y los plugins al proyecto Android
+    cd android && gradlew.bat assembleDebug   # APK de depuración
+    # -> android/app/build/outputs/apk/debug/app-debug.apk
+    npm run android                           # o abrirlo en Android Studio
+
+Si Java 21 no es el que usa la terminal, pon `JAVA_HOME` a la carpeta del JDK 21
+antes de `gradlew.bat`.
+
+En el móvil, «Exportar copia» y «Exportar libros a Excel» abren «Compartir» para
+guardar el archivo en Drive, Descargas o mandarlo (en el navegador se descargan).
+
+Icono y pantalla de carga: `node scripts/icono.mjs` genera las imágenes de
+`assets/` y `npx @capacitor/assets generate --android` todos los tamaños.
 
 ## Notas
 - Sin probar aún con datos reales: es un primer borrador.

@@ -14,7 +14,9 @@
     "@capacitor/android": "^7.0.0",
     "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.0.0",
+    "@capacitor/filesystem": "^7.1.9",
     "@capacitor/preferences": "^7.0.0",
+    "@capacitor/share": "^7.0.4",
     "dexie": "^4.0.0",
     "jszip": "^3.10.1",
     "papaparse": "^5.4.1",
@@ -23,6 +25,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^7.0.0",
     "@types/papaparse": "^5.3.14",
     "@types/react": "^18.3.0",

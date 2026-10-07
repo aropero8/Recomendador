@@ -1,6 +1,6 @@
 node_modules
 dist
-android
+# android/ sí se versiona (Capacitor trae su propio .gitignore para los builds)
 
 # datos personales: nunca al repositorio
 *.xlsx
