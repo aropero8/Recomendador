@@ -25,6 +25,7 @@ interface Row {
   rating: number | null;
   priority: number | null;
   year: number | null;
+  date?: string; // fecha de lectura (ISO), si la hoja la tiene
   pages?: number;
   format?: string;
 }
@@ -64,6 +65,7 @@ function readSheets(buf: ArrayBuffer, only?: string[]): Row[] {
         rating: isNaN(rating) ? null : rating,
         priority: parsePriority(o.priority),
         year: o.date instanceof Date ? o.date.getFullYear() : sheetYear ? parseInt(sheetYear, 10) : null,
+        date: o.date instanceof Date && !isNaN(o.date.getTime()) ? o.date.toISOString().slice(0, 10) : undefined,
         pages: typeof o.pages === "number" ? o.pages : undefined,
         format: o.format,
       });
@@ -75,7 +77,8 @@ function readSheets(buf: ArrayBuffer, only?: string[]): Row[] {
 // ---------- sinopsis: Wikipedia ES -> Open Library -> Wikipedia EN ----------
 
 const OL = "https://openlibrary.org";
-const OL_FIELDS = "key,title,author_name,subject,first_sentence,language";
+const OL_FIELDS = "key,title,author_name,subject,first_sentence,language,cover_i";
+const olCover = (id?: number) => (id ? `https://covers.openlibrary.org/b/id/${id}-M.jpg` : undefined);
 const GAP = 1000; // como mucho una petición por segundo, sumando todas las fuentes
 let last = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -136,7 +139,8 @@ function authorMatch(excel: string, names: string[] = []) {
   return names.some((n) => toks(n).some((t) => mine.some((m) => editDistance(m, t) <= 2)));
 }
 
-async function openLibrary(title: string, author: string) {
+/** Con wantDesc = false solo busca (portada y temas), sin pedir la descripción de la obra. */
+async function openLibrary(title: string, author: string, wantDesc = true) {
   // Primero título + autor; si nada encaja, solo título (los autores del Excel pueden estar mal escritos)
   for (const p of author ? [{ title, author }, { title }] : [{ title }]) {
     const js = await apiGet(`${OL}/search.json?${qs({ ...p, limit: 5, fields: OL_FIELDS })}`);
@@ -150,14 +154,18 @@ async function openLibrary(title: string, author: string) {
       .map((x: any) => x.d);
     if (!ok.length) continue;
 
-    const w = await apiGet(`${OL}${ok[0].key}.json`);
-    let desc = w?.description ?? "";
-    if (typeof desc === "object") desc = desc.value ?? "";
-    // Open Library suele repetir el mismo libro en varias obras: primera frase y temas de cualquiera de ellas.
+    let desc = "";
+    if (wantDesc) {
+      const w = await apiGet(`${OL}${ok[0].key}.json`);
+      desc = w?.description ?? "";
+      if (typeof desc === "object") desc = (desc as any).value ?? "";
+    }
+    // Open Library suele repetir el mismo libro en varias obras: primera frase, temas y portada de cualquiera de ellas.
     // La primera frase es una cita del libro, no un resumen: solo se usa si no hay nada mejor.
     const firstSentence = String(ok.find((d) => d.first_sentence?.length)?.first_sentence[0] ?? "").trim();
     const subjects = [...new Set(ok.flatMap((d) => (d.subject ?? []) as string[]))].slice(0, 10);
-    return { desc: String(desc).trim(), firstSentence, subjects };
+    const cover = olCover(ok.find((d) => d.cover_i)?.cover_i);
+    return { desc: String(desc).trim(), firstSentence, subjects, cover };
   }
   return null;
 }
@@ -173,7 +181,9 @@ function mentionsAuthor(author: string, text: string) {
 // Palabras que indican que la página es de un libro (y no de la película, la banda sonora...)
 const BOOK_WORDS =
   / (novela|novelas|libro|obra|poema|poemario|ensayo|cuento|cuentos|relato|relatos|saga|trilogia|manga|historieta|novel|novella|book|poem|essay|memoir) /;
-const OTHER_WORDS = / (pelicula|film|banda sonora|soundtrack|album|videojuego|video game|serie de television|television series|cancion|song) /;
+// (no «serie» a secas: «es una serie de manga» sí es un libro)
+const OTHER_WORDS =
+  / (pelicula|film|banda sonora|soundtrack|album|videojuego|video game|television|miniserie|miniseries|comic|comics|cancion|song) /;
 
 /** Es un libro si lo dice antes de hablar de película, disco... ("banda sonora de la adaptación de la novela" no vale). */
 function isBookPage(head: string) {
@@ -209,79 +219,125 @@ async function wikipedia(lang: "es" | "en", title: string, author: string) {
       if (!isBookPage(head)) continue;
       // Y tiene que hablar del autor, para no coger otro libro con el mismo título
       if (author && !mentionsAuthor(author, `${sum.description ?? ""} ${sum.extract}`)) continue;
-      return { desc: String(sum.extract).trim(), url: sum.content_urls?.desktop?.page as string | undefined };
+      return {
+        desc: String(sum.extract).trim(),
+        url: sum.content_urls?.desktop?.page as string | undefined,
+        thumb: sum.thumbnail?.source as string | undefined,
+      };
     }
   }
   return null;
 }
 
+/** Miniatura del artículo de Wikipedia del que ya salió la sinopsis (una sola petición). */
+async function wikiThumb(pageUrl: string) {
+  const m = /^https:\/\/(\w+)\.wikipedia\.org\/wiki\/(.+)$/.exec(pageUrl);
+  if (!m) return undefined;
+  const sum = await apiGet(`https://${m[1]}.wikipedia.org/api/rest_v1/page/summary/${m[2]}`);
+  return sum?.thumbnail?.source as string | undefined;
+}
+
 const LOOKUP_V = 2; // versión de la búsqueda: lo marcado con una versión anterior se vuelve a intentar
 
 /**
- * Busca la sinopsis de los libros que no la tienen: Wikipedia en español, después Open Library
- * y por último Wikipedia en inglés. Se puede detener y reanudar (extra.lookupV marca lo ya
- * intentado). No busca las series de manga que ya están en la lista de MAL.
+ * Completa los libros del Excel: sinopsis (Wikipedia en español, Open Library, Wikipedia en inglés)
+ * y portada (Open Library y, si no hay, la miniatura de Wikipedia). Solo procesa lo que no tiene
+ * sinopsis o portada; se puede detener y reanudar (extra.lookupV y extra.coverChecked marcan lo
+ * ya intentado). Las series de manga que ya están en MAL no se buscan: usan la portada de MAL.
  */
-export async function completarSinopsis(log: Log, stop: Stopper) {
+export async function completarLibros(log: Log, stop: Stopper) {
   const all = await db.items.toArray();
-  const malManga = all.filter((i) => i.source === "mal" && i.type === "manga").flatMap((i) => [i.title, ...(i.extra.altTitles ?? [])]);
-  const inMal = (it: Item) => it.type === "manga" && malManga.some((t) => titleMatch(it.title, t) === 2);
+  const malManga = all.filter((i) => i.source === "mal" && i.type === "manga");
+  const malMatch = (it: Item) =>
+    it.type === "manga" ? malManga.find((m) => [m.title, ...(m.extra.altTitles ?? [])].some((t) => titleMatch(it.title, t) === 2)) : undefined;
 
   const books = all.filter((i) => i.source === "excel");
-  const skipped = books.filter(inMal).length;
-  if (skipped) log(`libros: ${skipped} series de manga ya están en MAL; no se buscan`);
-  const todo = books.filter((i) => !i.synopsis && i.extra.lookupV !== LOOKUP_V && !inMal(i));
-  if (!todo.length) log("libros: no queda ninguna sinopsis por buscar");
-  else log(`libros: buscando ${todo.length} títulos en Wikipedia y Open Library (1 petición por segundo)`);
+  const inMal = books.filter((i) => malMatch(i));
+  let fromMal = 0;
+  for (const it of inMal) {
+    const cover = malMatch(it)?.cover;
+    if (cover && it.cover !== cover) {
+      await db.items.update(it.key, { cover });
+      fromMal++;
+    }
+  }
+  if (inMal.length) log(`libros: ${inMal.length} series de manga ya están en MAL; no se buscan${fromMal ? ` (${fromMal} portadas copiadas de MAL)` : ""}`);
+
+  const needSyn = (i: Item) => !i.synopsis && i.extra.lookupV !== LOOKUP_V;
+  const needCover = (i: Item) => !i.cover && !i.extra.coverChecked;
+  const todo = books.filter((i) => !malMatch(i) && (needSyn(i) || needCover(i)));
+  if (!todo.length) log("libros: no queda ninguna sinopsis ni portada por buscar");
+  else log(`libros: buscando sinopsis y portadas de ${todo.length} títulos (1 petición por segundo)`);
 
   const bySource: Record<string, number> = {};
+  let covers = 0;
   for (const [n, it] of todo.entries()) {
     if (stop.stopped) return log(`libros: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
     const author = String(it.extra.author ?? "").split("/")[0].trim(); // varios autores: el primero
     const title = cleanTitle(it.title);
     const { cats = [], lookupDone, olTried, ...extra } = it.extra; // cats/flags de versiones anteriores
     const excelGenres = it.genres.filter((g) => !cats.includes(g));
+    const wantSyn = needSyn(it);
+    const wantCover = needCover(it);
     let subjects: string[] = cats;
-    let desc = "";
-    let source = "";
-    let url: string | undefined;
+    let desc = it.synopsis;
+    let source: string | undefined = extra.synopsisSource;
+    let url: string | undefined = extra.synopsisUrl;
     let firstSentence = "";
+    let cover: string | undefined = it.cover;
+    let thumb: string | undefined; // miniatura de Wikipedia, por si Open Library no tiene portada
 
-    const es = await wikipedia("es", title, author);
-    if (es) [desc, source, url] = [es.desc, "wikipedia-es", es.url];
-    // Open Library: si ya se consultó con este mismo título no se repite
-    const olDone = extra.olChecked && title === it.title;
-    if (!desc && !olDone) {
-      const ol = await openLibrary(title, author);
-      extra.olChecked = true;
-      if (ol) subjects = ol.subjects;
+    if (wantSyn) {
+      const es = await wikipedia("es", title, author);
+      if (es) [desc, source, url, thumb] = [es.desc, "wikipedia-es", es.url, es.thumb];
+    }
+    // Open Library: para la sinopsis si aún falta (salvo que ya se consultara con este título) y para la portada
+    const olForDesc = wantSyn && !desc && !(extra.olChecked && title === it.title);
+    if (olForDesc || wantCover) {
+      const ol = await openLibrary(title, author, olForDesc);
+      if (olForDesc) extra.olChecked = true;
+      if (ol?.subjects.length) subjects = ol.subjects;
       if (ol?.desc) [desc, source] = [ol.desc, "openlibrary"];
+      if (wantCover && ol?.cover) cover = ol.cover;
       firstSentence = ol?.firstSentence ?? "";
     }
-    if (!desc) {
+    if (wantSyn && !desc) {
       const en = await wikipedia("en", title, author);
-      if (en) [desc, source, url] = [en.desc, "wikipedia-en", en.url];
+      if (en) [desc, source, url, thumb] = [en.desc, "wikipedia-en", en.url, en.thumb];
     }
-    if (!desc && firstSentence) [desc, source] = [firstSentence, "openlibrary-frase"];
-    if (source) bySource[source] = (bySource[source] ?? 0) + 1;
+    if (wantSyn && !desc && firstSentence) [desc, source] = [firstSentence, "openlibrary-frase"];
+    if (wantSyn && desc) bySource[source!] = (bySource[source!] ?? 0) + 1;
+    if (wantCover && !cover) cover = thumb ?? (url?.includes("wikipedia.org") ? await wikiThumb(url) : undefined);
+    if (wantCover && cover) covers++;
 
     await db.items.update(it.key, {
       synopsis: desc,
+      cover,
       genres: [...new Set([...excelGenres, ...subjects])],
-      extra: { ...extra, cats: subjects, lookupV: LOOKUP_V, synopsisSource: source || undefined, synopsisUrl: url },
-      embedding: undefined,
+      extra: {
+        ...extra,
+        cats: subjects,
+        lookupV: wantSyn ? LOOKUP_V : extra.lookupV,
+        coverChecked: wantCover || extra.coverChecked,
+        synopsisSource: source || undefined,
+        synopsisUrl: url,
+      },
+      ...(desc !== it.synopsis ? { embedding: undefined } : {}),
     });
     const found = Object.values(bySource).reduce((a, b) => a + b, 0);
-    if ((n + 1) % 5 === 0 || n + 1 === todo.length) log(`libros: ${n + 1}/${todo.length} (${found} con sinopsis)`);
+    if ((n + 1) % 5 === 0 || n + 1 === todo.length) log(`libros: ${n + 1}/${todo.length} (${found} sinopsis, ${covers} portadas)`);
   }
 
   const found = Object.values(bySource).reduce((a, b) => a + b, 0);
   if (todo.length) {
     const det = Object.entries(bySource).map(([k, v]) => `${k}: ${v}`).join(", ");
-    log(`libros: ${found} sinopsis encontradas de ${todo.length} buscadas${det ? ` (${det})` : ""}`);
+    log(`libros: ${found} sinopsis${det ? ` (${det})` : ""} y ${covers} portadas encontradas en ${todo.length} títulos`);
   }
-  const missing = (await db.items.where("source").equals("excel").toArray()).filter((i) => !i.synopsis && !inMal(i));
+  const rest = (await db.items.where("source").equals("excel").toArray()).filter((i) => !malMatch(i));
+  const missing = rest.filter((i) => !i.synopsis);
+  const noCover = rest.filter((i) => !i.cover).length;
   log(missing.length ? `libros sin sinopsis (${missing.length}): ${missing.map((i) => i.title).join(" · ")}` : "libros: todos tienen sinopsis");
+  if (noCover) log(`libros sin portada: ${noCover}`);
 }
 
 // ---------- agrupado de tomos de manga por serie ----------
@@ -341,14 +397,31 @@ export async function importBooks(readFile: File, unreadFile: File, sheetsCsv: s
     genres: e.genres,
     userScore: status === "plan" ? null : e.rating,
     status,
-    extra: { author: e.author, pages: e.pages, format: e.format, yearRead: e.year, priority: status === "plan" ? e.priority : null, volumes: e.volumes },
+    extra: {
+      author: e.author,
+      pages: e.pages,
+      format: e.format,
+      yearRead: e.year,
+      date: status === "plan" ? undefined : e.date,
+      priority: status === "plan" ? e.priority : null,
+      volumes: e.volumes,
+    },
   }));
-  // Sin buscar sinopsis aquí (ver completarSinopsis); se conserva la que ya hubiera
+  // Sin buscar sinopsis ni portadas aquí (ver completarLibros); se conserva lo que ya hubiera
   await bulkUpsert(items, (item, old) => ({
     ...item,
     synopsis: old.synopsis,
+    cover: old.cover,
     genres: [...item.genres, ...(old.extra.cats ?? [])],
-    extra: { ...item.extra, cats: old.extra.cats, olChecked: old.extra.olChecked, lookupV: old.extra.lookupV, synopsisSource: old.extra.synopsisSource, synopsisUrl: old.extra.synopsisUrl },
+    extra: {
+      ...item.extra,
+      cats: old.extra.cats,
+      olChecked: old.extra.olChecked,
+      lookupV: old.extra.lookupV,
+      coverChecked: old.extra.coverChecked,
+      synopsisSource: old.extra.synopsisSource,
+      synopsisUrl: old.extra.synopsisUrl,
+    },
   }));
-  log(`libros/manga: ${items.length} importados. Usa «Completar sinopsis» para buscar las sinopsis.`);
+  log(`libros/manga: ${items.length} importados. Usa «Completar datos» para buscar sinopsis y portadas.`);
 }
