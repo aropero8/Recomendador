@@ -1,4 +1,5 @@
 import { ChangeEvent, useState } from "react";
+import { DEFAULT_MODEL } from "../reco/gemini";
 import type { Settings } from "../settings";
 import { loadTheme, saveTheme, Theme } from "../theme";
 
@@ -56,6 +57,18 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
           API key de TMDB (v3, la corta)
           <input value={s.tmdbKey} onChange={set("tmdbKey")} type="password" {...field} />
         </label>
+        <label>
+          API key de Gemini (recomendaciones)
+          <input value={s.geminiKey} onChange={set("geminiKey")} type="password" autoCapitalize="none" autoComplete="off" />
+        </label>
+        <label>
+          Modelo de Gemini
+          <input value={s.geminiModel} onChange={set("geminiModel")} placeholder={DEFAULT_MODEL} autoCapitalize="none" />
+        </label>
+        <p className="hint">
+          La clave de Gemini es gratuita: créala en Google AI Studio (aistudio.google.com, «Get API key»). Deja el modelo
+          vacío para usar {DEFAULT_MODEL}.
+        </p>
         <label>
           Pestañas de «Sin leer» a usar (vacío = todas)
           <input value={s.sheets} onChange={set("sheets")} {...field} />
