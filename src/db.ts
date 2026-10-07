@@ -1,11 +1,24 @@
 import Dexie, { Table } from "dexie";
 import type { Item, Log } from "./types";
 
+/**
+ * Portada elegida a mano para un título: un enlace o una foto subida (ya reducida, unos 30-60 KB).
+ * Va en su propia tabla para que ninguna importación ni «Descargar portadas» la pise.
+ */
+export interface UserCover {
+  key: string; // la misma clave que el item
+  url?: string;
+  blob?: Blob;
+  updatedAt: string;
+}
+
 class DB extends Dexie {
   items!: Table<Item, string>;
+  covers!: Table<UserCover, string>;
   constructor() {
     super("recomendador");
     this.version(1).stores({ items: "key,type,source,status" });
+    this.version(2).stores({ items: "key,type,source,status", covers: "key" });
   }
 }
 

@@ -2,6 +2,8 @@ import { BatchWriter, db, isQuotaError, limpiarBaseDeDatos, putInBatches, quotaM
 import { qs } from "../lib/http";
 import type { Settings } from "../settings";
 import { ITEM_TYPES, Log, TYPE_LABEL } from "../types";
+import { customCoverKeys } from "../covers/user";
+import { fusionarManga } from "../merge";
 import { buscarPortadaLibro, cleanTitle, malSeries, titleMatch } from "./books";
 import { completarPeliculas, completarPosters } from "./letterboxd";
 import { importMal, malGet, malPicture } from "./mal";
@@ -33,14 +35,15 @@ export async function arreglarUrlsOpenLibrary() {
 
 /** Anime y manga de tu lista de MAL sin portada: se vuelve a pedir (MAL es rápido, sin límite de 1/s). */
 export async function portadasMal(s: Settings, log: Log, stop: Stopper) {
-  let todo = (await db.items.where("source").equals("mal").toArray()).filter((i) => !i.cover);
+  const custom = await customCoverKeys();
+  let todo = (await db.items.where("source").equals("mal").toArray()).filter((i) => !i.cover && !custom.has(i.key));
   if (!todo.length) return;
   if (!s.malUser || !s.malClientId) return log(`MAL: ${todo.length} sin portada. Pon tu usuario y Client ID en Ajustes.`);
   // Importados antes de guardar portadas: releer las listas es más rápido (una petición por cada 1.000)
   if (todo.some((i) => !i.extra.coverChecked)) {
     log("MAL: vuelvo a leer tus listas para traer las portadas");
     await importMal(s.malUser, s.malClientId, log);
-    todo = (await db.items.where("source").equals("mal").toArray()).filter((i) => !i.cover);
+    todo = (await db.items.where("source").equals("mal").toArray()).filter((i) => !i.cover && !custom.has(i.key));
     if (!todo.length) return;
   }
   log(`MAL: pidiendo la portada de ${todo.length} títulos uno a uno`);
@@ -68,7 +71,8 @@ export async function portadasMal(s: Settings, log: Log, stop: Stopper) {
 export async function portadasMangaExcel(s: Settings, log: Log, stop: Stopper) {
   const all = await db.items.toArray();
   const malManga = all.filter((i) => i.source === "mal" && i.type === "manga");
-  const mangas = all.filter((i) => i.source === "excel" && i.type === "manga" && !i.cover);
+  const custom = await customCoverKeys();
+  const mangas = all.filter((i) => i.source === "excel" && i.type === "manga" && !i.cover && !custom.has(i.key));
 
   const copies = mangas.flatMap((it) => {
     const cover = malSeries(it, malManga)?.cover;
@@ -115,7 +119,8 @@ async function buscarMangaEnMal(title: string, clientId: string) {
 
 /** Películas: póster de TMDB para las que ya tienen tmdbId y no tienen portada; las no completadas se completan. */
 export async function portadasPeliculas(s: Settings, log: Log, stop: Stopper) {
-  const movies = await db.items.where("source").equals("letterboxd").toArray();
+  const custom = await customCoverKeys();
+  const movies = (await db.items.where("source").equals("letterboxd").toArray()).filter((i) => !custom.has(i.key));
   const withId = movies.filter((i) => i.extra.tmdbId && !i.cover);
   const pending = movies.filter((i) => !i.extra.tmdbDone);
   if (!withId.length && !pending.length) return;
@@ -126,7 +131,8 @@ export async function portadasPeliculas(s: Settings, log: Log, stop: Stopper) {
 
 /** Libros (y mangas sin portada en MAL): Open Library y, si no, la miniatura de Wikipedia. Una petición por segundo. */
 export async function portadasLibros(log: Log, stop: Stopper) {
-  const todo = (await db.items.where("source").equals("excel").toArray()).filter((i) => !i.cover && i.extra.coverV !== COVER_V);
+  const custom = await customCoverKeys();
+  const todo = (await db.items.where("source").equals("excel").toArray()).filter((i) => !i.cover && !custom.has(i.key) && i.extra.coverV !== COVER_V);
   if (!todo.length) return;
   log(`libros: buscando la portada de ${todo.length} títulos en Open Library y Wikipedia (1 petición por segundo)`);
   const out = new BatchWriter();
@@ -146,9 +152,10 @@ export async function portadasLibros(log: Log, stop: Stopper) {
 
 /** Cuántas portadas faltan por categoría. */
 export async function resumenPortadas(log: Log) {
-  const all = await db.items.toArray();
+  const custom = await customCoverKeys();
+  const all = fusionarManga(await db.items.toArray()).filter((i) => !custom.has(i.key));
   const parts = ITEM_TYPES.map((t) => `${TYPE_LABEL[t]} ${all.filter((i) => i.type === t && !i.cover).length}`);
-  log(`Portadas que faltan: ${parts.join(" · ")}`);
+  log(`Portadas que faltan: ${parts.join(" · ")}. Las que no aparezcan se pueden poner a mano desde la ficha («Poner portada»).`);
 }
 
 /**

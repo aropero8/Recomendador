@@ -1,7 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { Settings } from "../settings";
 import { Item, STATUS_LABEL, TYPE_LABEL } from "../types";
 import { scoreText } from "./Category";
 import Cover from "./Cover";
+import CoverPicker from "./CoverPicker";
 import { IconBack } from "./icons";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -33,7 +35,10 @@ function facts(i: Item): [string, string][] {
             ["Leído en", i.status === "plan" ? "" : e.yearRead],
             ["Prioridad", e.priority],
           ]
-        : [["Otros títulos", list((e.altTitles ?? []).filter((t: string) => t !== i.title))]];
+        : [
+            ["Otros títulos", list((e.altTitles ?? []).filter((t: string) => t !== i.title))],
+            ["En papel (tu Excel)", e.paper ? `${e.paper.volumes} ${e.paper.volumes === 1 ? "tomo leído" : "tomos leídos"}${e.paper.score != null ? `, nota media ${scoreText(e.paper.score)}` : ""}` : ""],
+          ];
   return rows.filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]);
 }
 
@@ -46,9 +51,17 @@ function links(i: Item): [string, string][] {
   return out;
 }
 
-export default function Detail({ item, onBack }: { item: Item | undefined; onBack: () => void }) {
+interface Props {
+  item: Item | undefined;
+  settings: Settings;
+  onBack: () => void;
+}
+
+export default function Detail({ item, settings, onBack }: Props) {
   const box = useRef<HTMLDivElement>(null);
+  const [picking, setPicking] = useState(false);
   useEffect(() => box.current?.focus(), [item?.key]);
+  useEffect(() => setPicking(false), [item?.key]);
 
   return (
     <div className="detail" role="dialog" aria-modal="true" aria-label={item?.title ?? "Ficha"} ref={box} tabIndex={-1}>
@@ -62,10 +75,19 @@ export default function Detail({ item, onBack }: { item: Item | undefined; onBac
         <p className="empty">Este título ya no está en tu biblioteca.</p>
       ) : (
         <article className="detail-body">
-          <div className="detail-cover">
-            <Cover item={item} eager />
+          <div className="detail-side">
+            <div className="detail-cover">
+              <Cover item={item} eager />
+            </div>
+            {!picking && (
+              <button className="ghost" onClick={() => setPicking(true)}>
+                {item.cover ? "Cambiar portada" : "Poner portada"}
+              </button>
+            )}
+            {item.extra.customCover && !picking && <p className="hint center">Portada elegida por ti</p>}
           </div>
           <div className="detail-main">
+            {picking && <CoverPicker item={item} settings={settings} custom={!!item.extra.customCover} onClose={() => setPicking(false)} />}
             <h1>{item.title}</h1>
             <p className="detail-meta">
               {item.userScore != null && <span className={`badge big ${item.type}`}>{scoreText(item.userScore)}</span>}

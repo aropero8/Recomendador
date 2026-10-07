@@ -1,21 +1,23 @@
+import { CoverBackup, exportCovers, importCovers } from "./covers/user";
 import { db, putInBatches } from "./db";
 import { ITEM_TYPES, type Item, type Log } from "./types";
 
 // Copia de seguridad de la biblioteca en un .json. No incluye las claves de Ajustes
 // (por si el archivo se comparte) ni los embeddings (se regeneran y pesan mucho).
 const FORMAT = "recomendador-backup";
-const VERSION = 1;
+const VERSION = 2; // 2: incluye las portadas elegidas a mano
 
 export async function exportBackup(log: Log) {
   const items = (await db.items.toArray()).map(({ embedding, ...i }) => i);
-  const data = { format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(), items };
+  const covers = await exportCovers();
+  const data = { format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(), items, covers };
   const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `backup-recomendador-${data.exportedAt.slice(0, 10)}.json`; // .gitignore: backup*.json
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-  log(`Copia exportada: ${items.length} títulos (${a.download})`);
+  log(`Copia exportada: ${items.length} títulos${covers.length ? ` y ${covers.length} portadas elegidas a mano` : ""} (${a.download})`);
 }
 
 const isItem = (i: any): i is Item =>
@@ -49,7 +51,8 @@ export async function restoreBackup(file: File, log: Log) {
     return log("Restauración cancelada");
   }
   await putInBatches(items);
-  log(`Copia restaurada: ${items.length} títulos${bad ? ` (${bad} entradas no válidas ignoradas)` : ""}`);
+  const covers = Array.isArray(data.covers) ? await importCovers(data.covers as CoverBackup[]) : 0;
+  log(`Copia restaurada: ${items.length} títulos${covers ? ` y ${covers} portadas elegidas a mano` : ""}${bad ? ` (${bad} entradas no válidas ignoradas)` : ""}`);
 }
 
 /** Pide al navegador que no borre la base de datos cuando le falte espacio. */

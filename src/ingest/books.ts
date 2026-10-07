@@ -76,15 +76,15 @@ function readSheets(buf: ArrayBuffer, only?: string[]): Row[] {
 
 // ---------- sinopsis: Wikipedia ES -> Open Library -> Wikipedia EN ----------
 
-const OL = "https://openlibrary.org";
+export const OL = "https://openlibrary.org";
 const OL_FIELDS = "key,title,author_name,subject,first_sentence,language,cover_i";
 // default=false: si la portada no existe da error (y se ve el recuadro con iniciales) en vez de una imagen en blanco
-const olCover = (id?: number) => (id ? `https://covers.openlibrary.org/b/id/${id}-M.jpg?default=false` : undefined);
+export const olCover = (id?: number) => (id ? `https://covers.openlibrary.org/b/id/${id}-M.jpg?default=false` : undefined);
 const GAP = 1000; // como mucho una petición por segundo, sumando todas las fuentes
 let last = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function apiGet(url: string) {
+export async function apiGet(url: string) {
   const wait = last + GAP - Date.now();
   if (wait > 0) await sleep(wait);
   last = Date.now();
@@ -231,14 +231,14 @@ async function wikipedia(lang: "es" | "en", title: string, author: string) {
 }
 
 /** Miniatura del artículo de Wikipedia del que ya salió la sinopsis (una sola petición). */
-async function wikiThumb(pageUrl: string) {
+export async function wikiThumb(pageUrl: string) {
   const m = /^https:\/\/(\w+)\.wikipedia\.org\/wiki\/(.+)$/.exec(pageUrl);
   if (!m) return undefined;
   const sum = await apiGet(`https://${m[1]}.wikipedia.org/api/rest_v1/page/summary/${m[2]}`);
   return sum?.thumbnail?.source as string | undefined;
 }
 
-const firstAuthor = (it: Item) => String(it.extra.author ?? "").split("/")[0].trim(); // varios autores: el primero
+export const firstAuthor = (it: Item) => String(it.extra.author ?? "").split("/")[0].trim(); // varios autores: el primero
 
 /** Serie de tu lista de MAL que corresponde a un manga del Excel (mismo título o título alternativo). */
 export function malSeries(it: Item, malManga: Item[]) {
@@ -363,6 +363,15 @@ interface Entry extends Row {
   volumes?: number;
 }
 
+// Número de tomo al final: "Blue Lock 10", "Jujutsu Kaisen vol. 3", "Jujutsu Kaisen vol 3", "Berserk #2", "Tomo 4"
+const VOLUME = /\s*[-–,:]?\s*(?:vol(?:umen|ume)?\.?|tomo|t\.|n[º°o]\.?|#)?\s*\d+\s*$/i;
+const VOLUME_WORD = /\s+(?:vol(?:umen|ume)?\.?|tomo)\s*$/i;
+
+/** Título de la serie sin el número de tomo, para agrupar todos los tomos en una sola entrada. */
+export function volumeBase(title: string) {
+  return title.replace(VOLUME, "").replace(VOLUME_WORD, "").trim() || title.trim();
+}
+
 function groupManga(rows: Row[]): Entry[] {
   const out: Entry[] = [];
   const series = new Map<string, Row[]>();
@@ -371,7 +380,7 @@ function groupManga(rows: Row[]): Entry[] {
       out.push({ ...r, type: "book" });
       continue;
     }
-    const base = r.title.replace(/\s*#?\d+\s*$/, "").trim() || r.title;
+    const base = volumeBase(r.title);
     const k = `${norm(base)}|${norm(r.author)}`;
     series.set(k, [...(series.get(k) ?? []), { ...r, title: base }]);
   }
@@ -439,5 +448,12 @@ export async function importBooks(readFile: File, unreadFile: File, sheetsCsv: s
       synopsisUrl: old.extra.synopsisUrl,
     },
   }));
+  // Lo que ya no sale del Excel (o se ha agrupado de otra forma) se quita para que no quede repetido
+  const fresh = new Set(items.map((i) => i.key));
+  const stale = (await db.items.where("source").equals("excel").primaryKeys()).filter((k) => !fresh.has(k as string));
+  if (stale.length) {
+    await db.items.bulkDelete(stale);
+    log(`libros/manga: ${stale.length} entradas antiguas quitadas (ya no están en el Excel o ahora se agrupan)`);
+  }
   log(`libros/manga: ${items.length} importados. Usa «Completar datos» para buscar sinopsis y portadas.`);
 }

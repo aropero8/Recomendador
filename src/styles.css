@@ -162,3 +162,26 @@ th:first-child, td:first-child { text-align: left; }
 .match { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
 .why { margin: 6px 0 0; font-size: 0.9rem; }
 .meta { margin: 4px 0 0; font-size: 0.82rem; color: var(--muted); }
+
+/* ---------- portada elegida a mano ---------- */
+button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); font-weight: 600; }
+button.ghost:active { background: var(--line); }
+.detail-side { display: grid; gap: 10px; justify-items: center; align-content: start; }
+.detail-side > button { width: min(58vw, 240px); }
+.hint.center { text-align: center; margin: 0; }
+.picker { display: grid; gap: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel, transparent); }
+.picker-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.picker-head h2 { margin: 0; }
+.picker-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.picker-option { width: 100%; padding: 0; background: transparent; color: var(--ink); border: 2px solid transparent; border-radius: 10px; display: grid; gap: 4px; text-align: left; font-weight: 400; }
+.picker-option:hover, .picker-option:focus-visible { border-color: var(--accent); }
+.picker-option img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; background: var(--line); display: block; }
+.picker-option span { font-size: 0.72rem; line-height: 1.2; color: var(--muted, var(--ink)); padding: 0 4px 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.picker-url { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+.picker-url label { display: grid; gap: 4px; font-size: 0.9rem; }
+.picker-file { display: inline-grid; position: relative; justify-self: start; }
+.picker-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.picker-file span { font-weight: 600; background: var(--accent); color: #fff; border-radius: 8px; padding: 11px 14px; }
+.picker-file:focus-within span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.error { color: #d9534f; margin: 0; }
+@media (min-width: 720px) { .detail-side > button { width: 100%; } }
