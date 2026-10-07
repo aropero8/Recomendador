@@ -196,10 +196,14 @@ button.ghost:active { background: var(--line); }
 .banner.done { color: var(--ink); }
 .banner.done span { white-space: normal; }
 button.link { background: none; color: var(--accent); padding: 4px 6px; font-weight: 600; }
-.update-all { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 
 /* ---------- libros: añadir, editar ---------- */
-button.add-book { align-self: flex-start; background: var(--book); color: var(--on-cat); }
+.cat-tools { display: flex; gap: 8px; align-items: stretch; }
+.cat-tools input { flex: 1; min-width: 0; }
+button.add-book { background: var(--book); color: var(--on-cat); }
+button.update { display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--ink); border: 1px solid var(--c, var(--line)); white-space: nowrap; }
+button.update svg { width: 18px; height: 18px; color: var(--c, var(--accent)); }
+.update-hint { margin-top: -4px; }
 .book-form { padding: 18px 16px 40px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; color: var(--muted); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

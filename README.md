@@ -10,9 +10,12 @@ Importa tus listas y consúltalas en el móvil. Todo se guarda en el dispositivo
   lista de MAL no se buscan y usan la portada de MAL
 
 ### Mantenerla al día
-- **Actualizar** (cabecera de Anime, Manga y Películas) y **Actualizar todo** (inicio):
-  muestran el progreso, un resumen («3 nuevos, 2 notas cambiadas») y cuándo se
-  actualizó cada fuente («Actualizado hace 2 días»).
+- Cada categoría tiene un botón **Actualizar** junto al buscador (en Libros, junto a
+  «Añadir libro») con la fecha de la última vez debajo («Actualizado hace 2 días»).
+  Muestra el progreso y un resumen de lo actualizado («Películas: 3 nuevas, 1 nota
+  cambiada»). Anime y manga se actualizan a la vez (es la misma lista de MAL); en
+  Libros busca las sinopsis y portadas que falten. Si falta algo en Ajustes, el aviso
+  lo dice y lleva a Ajustes.
 - MAL: vuelve a leer tu lista y aplica solo los cambios (nuevos, nota, estado,
   progreso; quita lo que ya no esté). Busca la portada solo de los nuevos.
 - Letterboxd: lee `https://letterboxd.com/<usuario>/rss/` (usuario en Ajustes). Trae

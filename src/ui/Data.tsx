@@ -67,7 +67,7 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
           Lee tu lista pública de MyAnimeList{settings.malUser ? ` (${settings.malUser})` : ""} y aplica los cambios: nuevos, notas,
           estados y progreso; quita lo que ya no esté en la lista. También con el botón de actualizar de Anime o Manga.
         </p>
-        <button disabled={busy} onClick={() => run(async (stop) => void (await actualizarAnimeManga(settings, addLog, stop)), true)}>
+        <button disabled={busy} onClick={() => run(async (stop) => addLog((await actualizarAnimeManga(settings, addLog, stop)).text), true)}>
           Actualizar desde MyAnimeList
         </button>
       </section>
@@ -78,7 +78,7 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
           El RSS de Letterboxd{settings.letterboxdUser ? ` (${settings.letterboxdUser})` : ""} trae tus últimas ~50 entradas del diario:
           añade las nuevas, actualiza notas y pasa a vistas las de la watchlist. Para sincronizar todo el historial, sube el ZIP.
         </p>
-        <button disabled={busy || !settings.letterboxdUser} onClick={() => run(async (stop) => void (await actualizarPeliculas(settings, addLog, stop)), true)}>
+        <button disabled={busy || !settings.letterboxdUser} onClick={() => run(async (stop) => addLog((await actualizarPeliculas(settings, addLog, stop)).text), true)}>
           Actualizar desde el RSS
         </button>
         <label>
