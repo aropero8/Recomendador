@@ -8,6 +8,20 @@ import type { Item, Log, Status } from "../types";
 const ORIGIN = "https://api.myanimelist.net";
 const BASE = Capacitor.isNativePlatform() ? ORIGIN : "/mal-api";
 
+/** Portada de MAL: la grande si la hay. */
+export const malPicture = (m: any): string | undefined => m?.main_picture?.large ?? m?.main_picture?.medium;
+
+/** GET a la API de MAL (ruta desde /v2). Devuelve null si no existe (404). */
+export async function malGet(path: string, clientId: string) {
+  try {
+    return await getJson(`${BASE}${path}`, { headers: { "X-MAL-CLIENT-ID": clientId }, strict: true, delay: 300 });
+  } catch (e) {
+    if (e instanceof HttpError && (e.status === 400 || e.status === 401)) throw new Error("MyAnimeList rechaza el Client ID. Revísalo en Ajustes.");
+    if (e instanceof HttpError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 const STATUS: Record<string, Status> = {
   completed: "read",
   watching: "reading",
@@ -63,12 +77,13 @@ export async function importMal(user: string, clientId: string, log: Log) {
           malId: m.id,
           altTitles: [...new Set([m.title, alt.en, alt.ja, ...(alt.synonyms ?? [])].filter(Boolean))],
           date: ls?.finish_date ?? ls?.updated_at,
-          coverChecked: true, // ya se pidió main_picture: si no hay portada, MAL no la tiene
+          coverChecked: true, // ya se pidió main_picture (lo que falte lo vuelve a pedir «Descargar portadas»)
         },
-        cover: m.main_picture?.medium ?? m.main_picture?.large,
+        cover: malPicture(m),
       };
     });
-    await bulkUpsert(items);
+    // Si la lista no trae portada se conserva la que se consiguiera antes pidiendo el título suelto
+    await bulkUpsert(items, (item, old) => ({ ...item, cover: item.cover ?? old.cover }));
     log(`${kind}: ${entries.length} importados`);
   }
 }

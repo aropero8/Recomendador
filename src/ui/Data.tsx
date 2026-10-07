@@ -3,6 +3,7 @@ import { exportBackup, restoreBackup } from "../backup";
 import type { Stopper } from "../db";
 import { importBooks } from "../ingest/books";
 import { completarDatos } from "../ingest/complete";
+import { descargarPortadas } from "../ingest/covers";
 import { importLetterboxd } from "../ingest/letterboxd";
 import { importMal } from "../ingest/mal";
 import type { Settings } from "../settings";
@@ -102,6 +103,18 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
         </p>
         <button disabled={busy} onClick={() => run((stop) => completarDatos(settings, addLog, stop), true)}>
           Completar datos
+        </button>
+      </section>
+
+      <section>
+        <h2>Portadas</h2>
+        <p className="hint">
+          Solo busca portadas, para lo que aún no tenga: MyAnimeList (también los mangas del Excel, con el Client ID),
+          pósters de TMDB y portadas de Open Library o Wikipedia para los libros (una petición por segundo). Al terminar,
+          el Registro muestra cuántas faltan por categoría.
+        </p>
+        <button disabled={busy} onClick={() => run((stop) => descargarPortadas(settings, addLog, stop), true)}>
+          Descargar portadas
         </button>
       </section>
 
