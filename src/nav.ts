@@ -7,6 +7,7 @@ export type View =
   | { v: "home" }
   | { v: "cat"; type: ItemType }
   | { v: "item"; type: ItemType; key: string } // ficha abierta encima de su categoría
+  | { v: "book"; type: ItemType; key?: string } // formulario para añadir (sin key) o editar un libro
   | { v: "data" }
   | { v: "settings" };
 

@@ -4,7 +4,7 @@ export type Log = (msg: string) => void;
 
 export interface Item {
   key: string; // p. ej. "anime:mal:5114"
-  source: "mal" | "letterboxd" | "excel";
+  source: "mal" | "letterboxd" | "excel" | "app"; // app: libros apuntados en la propia app
   type: ItemType;
   title: string;
   synopsis: string;
@@ -32,3 +32,7 @@ export const TYPE_LABEL: Record<ItemType, string> = {
 };
 
 export const ITEM_TYPES: ItemType[] = ["anime", "manga", "movie", "book"];
+
+/** Libros y mangas en papel: los del Excel y los apuntados en la app. */
+export const BOOK_SOURCES = ["excel", "app"] as const;
+export const isBookSource = (i: Item) => i.source === "excel" || i.source === "app";

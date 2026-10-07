@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { SyncTimes, timeAgo } from "../sync";
 import { Item, ItemType, ITEM_TYPES, TYPE_LABEL } from "../types";
 import Cover from "./Cover";
 
@@ -14,9 +15,12 @@ interface Props {
   items: Item[] | null;
   openCategory: (t: ItemType) => void;
   openData: () => void;
+  syncTimes: SyncTimes;
+  busy: boolean;
+  onUpdateAll: () => void;
 }
 
-export default function Home({ items, openCategory, openData }: Props) {
+export default function Home({ items, openCategory, openData, syncTimes, busy, onUpdateAll }: Props) {
   const groups = useMemo(() => {
     const g = {} as Record<ItemType, Item[]>;
     for (const t of ITEM_TYPES) g[t] = [];
@@ -44,6 +48,15 @@ export default function Home({ items, openCategory, openData }: Props) {
             </button>
           );
         })}
+      </div>
+      <div className="update-all">
+        <button className="ghost" disabled={busy} onClick={onUpdateAll}>
+          Actualizar todo
+        </button>
+        <p className="hint">
+          MyAnimeList: {syncTimes.mal ? `actualizado ${timeAgo(syncTimes.mal)}` : "sin actualizar"} · Letterboxd:{" "}
+          {syncTimes.letterboxd ? `actualizado ${timeAgo(syncTimes.letterboxd)}` : "sin actualizar"}
+        </p>
       </div>
     </div>
   );

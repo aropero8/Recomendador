@@ -12,17 +12,30 @@ export interface UserCover {
   updatedAt: string;
 }
 
+/** Datos sueltos de la app: fechas de actualización, libros del Excel borrados a mano... */
+export interface Meta {
+  key: string;
+  value: any;
+}
+
 class DB extends Dexie {
   items!: Table<Item, string>;
   covers!: Table<UserCover, string>;
+  meta!: Table<Meta, string>;
   constructor() {
     super("recomendador");
     this.version(1).stores({ items: "key,type,source,status" });
     this.version(2).stores({ items: "key,type,source,status", covers: "key" });
+    this.version(3).stores({ items: "key,type,source,status", covers: "key", meta: "key" });
   }
 }
 
 export const db = new DB();
+
+export async function getMeta<T>(key: string, fallback: T): Promise<T> {
+  return ((await db.meta.get(key))?.value as T) ?? fallback;
+}
+export const setMeta = (key: string, value: unknown) => db.meta.put({ key, value });
 
 /** Escrituras de lo que se va completando, de 50 en 50 (ni una transacción por item ni una gigante). */
 export const BATCH = 50;

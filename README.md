@@ -3,10 +3,32 @@
 ## Fase 1 (esta versión): tu biblioteca
 Importa tus listas y consúltalas en el móvil. Todo se guarda en el dispositivo.
 - MyAnimeList (anime y manga) con la API oficial v2 (necesita un Client ID)
-- Letterboxd (ZIP) + TMDB
-- Libros (dos Excel) + Wikipedia y Open Library (sin claves ni cuentas)
+- Letterboxd (RSS público y ZIP) + TMDB
+- Libros: se apuntan en la app («Añadir libro»); los dos Excel quedan como
+  importación inicial. Sinopsis y portadas de Wikipedia y Open Library (sin claves)
 - Los tomos de manga del Excel se agrupan por serie; las series que ya están en tu
   lista de MAL no se buscan y usan la portada de MAL
+
+### Mantenerla al día
+- **Actualizar** (cabecera de Anime, Manga y Películas) y **Actualizar todo** (inicio):
+  muestran el progreso, un resumen («3 nuevos, 2 notas cambiadas») y cuándo se
+  actualizó cada fuente («Actualizado hace 2 días»).
+- MAL: vuelve a leer tu lista y aplica solo los cambios (nuevos, nota, estado,
+  progreso; quita lo que ya no esté). Busca la portada solo de los nuevos.
+- Letterboxd: lee `https://letterboxd.com/<usuario>/rss/` (usuario en Ajustes). Trae
+  las últimas ~50 entradas del diario: añade las nuevas, actualiza notas y pasa a
+  vistas las de la watchlist; completa con TMDB solo las nuevas. Para sincronizar
+  todo el historial, sube el ZIP en Datos (las películas no se duplican).
+- Libros: «Añadir libro» sugiere títulos de Open Library mientras escribes y busca
+  la sinopsis al guardar. En la ficha: «Editar», «Marcar como leído» y «Eliminar».
+  Lo que cambies en un libro del Excel se guarda en `extra.userEdits` y gana al
+  reimportar; los que elimines no vuelven. «Exportar libros a Excel» (Datos)
+  descarga un `.xlsx` con todos.
+- Nada de esto borra sinopsis ni portadas encontradas o elegidas a mano. La copia
+  de seguridad incluye los libros añadidos en la app.
+
+En el navegador, MAL y el RSS de Letterboxd pasan por el proxy de `npm run dev`
+(`/mal-api`, `/lb-rss`) porque no admiten CORS; en Android van directos.
 
 Pantallas: inicio (una tarjeta por categoría con sus portadas mejor puntuadas) ->
 categoría (cuadrícula de portadas con buscador, filtro por estado y orden) ->
@@ -41,7 +63,7 @@ para copiar tu perfil a cualquier chat) y la verificación de títulos.
     npm install
     npm run dev           # prueba en el navegador
 
-En la app: Ajustes (usuario y Client ID de MAL, API key de TMDB) -> Datos (importar) -> Biblioteca.
+En la app: Ajustes (usuario y Client ID de MAL, usuario de Letterboxd, API key de TMDB) -> Datos (importar) -> inicio.
 
 El Client ID de MyAnimeList se crea gratis en https://myanimelist.net/apiconfig
 (tipo de app: "other"). La API de MAL no admite CORS, así que en el navegador
