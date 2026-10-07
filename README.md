@@ -6,14 +6,19 @@ Importa tus listas y consúltalas en el móvil. Todo se guarda en el dispositivo
 - Letterboxd (ZIP) + TMDB
 - Libros (dos Excel) + Wikipedia y Open Library (sin claves ni cuentas)
 - Los tomos de manga del Excel se agrupan por serie; las series que ya están en tu
-  lista de MAL no se buscan
+  lista de MAL no se buscan y usan la portada de MAL
 
-Pestañas: Biblioteca (buscar, filtrar, ordenar), Datos (importar), Ajustes (claves).
+Pantallas: inicio (una tarjeta por categoría con sus portadas mejor puntuadas) ->
+categoría (cuadrícula de portadas con buscador, filtro por estado y orden) ->
+ficha (portada, nota, sinopsis y datos según el tipo). Datos y Ajustes se abren
+desde los iconos de la cabecera. El botón «atrás» del navegador o de Android vuelve
+a la pantalla anterior.
 
-Importar libros y películas tarda segundos: las sinopsis (Wikipedia en español,
-Open Library y Wikipedia en inglés, por ese orden) y los datos de TMDB se traen
-después con los botones «Completar» de la pestaña Datos, que procesan solo lo
-pendiente y se pueden detener y reanudar.
+Importar tarda segundos: las sinopsis y portadas se traen después con el botón
+«Completar datos» de Datos (portadas de MAL; sinopsis y pósters de TMDB; sinopsis
+de Wikipedia en español, Open Library y Wikipedia en inglés, y portadas de Open
+Library o Wikipedia para los libros). Solo procesa lo pendiente y se puede detener
+y reanudar.
 
 ## Fase 2 (pendiente): recomendador
 En `fase2-pendiente/` está el código ya escrito: embeddings locales, perfil de
@@ -55,7 +60,8 @@ excluye Excel, ZIP, CSV y `.env`.
 ## Créditos y licencias
 - Esta aplicación usa la API de TMDB, pero no está avalada ni certificada por TMDB.
 - Anime y manga: [API oficial de MyAnimeList](https://myanimelist.net/apiconfig/references/api/v2).
-- Libros: [Open Library](https://openlibrary.org).
+- Libros: [Open Library](https://openlibrary.org) (datos y portadas de Open Library Covers).
+- Pósters de películas: TMDB. Portadas de anime y manga: MyAnimeList.
 - Resúmenes de Wikipedia (CC BY-SA): los textos de [Wikipedia](https://www.wikipedia.org)
   se usan bajo licencia [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.es);
   la app guarda el enlace al artículo de origen de cada resumen.

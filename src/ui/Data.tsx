@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { exportBackup, restoreBackup } from "../backup";
 import type { Stopper } from "../db";
-import { completarSinopsis, importBooks } from "../ingest/books";
-import { completarPeliculas, importLetterboxd } from "../ingest/letterboxd";
+import { importBooks } from "../ingest/books";
+import { completarDatos } from "../ingest/complete";
+import { importLetterboxd } from "../ingest/letterboxd";
 import { importMal } from "../ingest/mal";
 import type { Settings } from "../settings";
 import { ITEM_TYPES, ItemType, Log, TYPE_LABEL } from "../types";
 
-export type Counts = Record<ItemType, { total: number; rated: number; synopsis: number }>;
+export type Counts = Record<ItemType, { total: number; rated: number; synopsis: number; cover: number }>;
 
 interface Props {
   settings: Settings;
@@ -37,7 +38,8 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
               <th></th>
               <th>Total</th>
               <th>Con nota</th>
-              <th>Con sinopsis</th>
+              <th>Sinopsis</th>
+              <th>Portada</th>
             </tr>
           </thead>
           <tbody>
@@ -49,6 +51,7 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
                 <td>{counts[t]?.total ?? 0}</td>
                 <td>{counts[t]?.rated ?? 0}</td>
                 <td>{counts[t]?.synopsis ?? 0}</td>
+                <td>{counts[t]?.cover ?? 0}</td>
               </tr>
             ))}
           </tbody>
@@ -70,10 +73,6 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
         <button disabled={busy || !zip} onClick={() => run(() => importLetterboxd(zip!, addLog))}>
           Importar películas
         </button>
-        <p className="hint">Después, trae sinopsis y géneros de TMDB. Puedes detenerlo y reanudarlo cuando quieras.</p>
-        <button disabled={busy} onClick={() => run((stop) => completarPeliculas(settings.tmdbKey, addLog, stop), true)}>
-          Completar datos (películas)
-        </button>
       </section>
 
       <section>
@@ -92,9 +91,17 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
         >
           Importar libros
         </button>
-        <p className="hint">Después, busca las sinopsis en Wikipedia y Open Library (una petición por segundo). Puedes detenerlo y reanudarlo.</p>
-        <button disabled={busy} onClick={() => run((stop) => completarSinopsis(addLog, stop), true)}>
-          Completar sinopsis (libros)
+      </section>
+
+      <section>
+        <h2>Completar datos</h2>
+        <p className="hint">
+          Busca lo que falte: portadas de MyAnimeList, sinopsis y pósters de TMDB para las películas (necesita la API
+          key) y sinopsis y portadas de los libros en Wikipedia y Open Library (una petición por segundo, es lo más
+          lento). Solo procesa lo pendiente; puedes detenerlo y reanudarlo.
+        </p>
+        <button disabled={busy} onClick={() => run((stop) => completarDatos(settings, addLog, stop), true)}>
+          Completar datos
         </button>
       </section>
 

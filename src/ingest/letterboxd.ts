@@ -60,7 +60,7 @@ export async function importLetterboxd(file: File, log: Log) {
       genres: [],
       userScore: score.get(uri) ?? null,
       status,
-      extra: { year: r["Year"] ? parseInt(r["Year"], 10) : null, liked: liked.has(uri) },
+      extra: { year: r["Year"] ? parseInt(r["Year"], 10) : null, liked: liked.has(uri), date: r["Date"] || undefined },
     };
   });
   // Se conservan los datos de TMDB que ya hubiera
@@ -68,16 +68,45 @@ export async function importLetterboxd(file: File, log: Log) {
     ...item,
     synopsis: old.synopsis,
     genres: old.genres,
+    cover: old.cover,
     extra: { ...old.extra, ...item.extra },
   }));
-  log(`películas: ${items.length} importadas. Usa «Completar datos» para traer sinopsis y géneros de TMDB.`);
+  log(`películas: ${items.length} importadas. Usa «Completar datos» para traer sinopsis, géneros y pósters de TMDB.`);
 }
 
-/** Trae sinopsis, géneros, director, reparto y plataformas de TMDB. Se puede detener y reanudar. */
+const poster = (path?: string | null) => (path ? `https://image.tmdb.org/t/p/w342${path}` : undefined);
+
+/** Películas ya completadas antes de guardar pósters: solo se pide /movie/{tmdbId}, sin volver a buscarlas. */
+async function completarPosters(tmdbKey: string, todo: Item[], log: Log, stop: Stopper) {
+  log(`películas: buscando el póster de ${todo.length} ya completadas`);
+  let found = 0;
+  for (const [n, it] of todo.entries()) {
+    if (stop.stopped) return false;
+    let d: any = null;
+    try {
+      d = await getJson(`${T}/movie/${it.extra.tmdbId}?${qs({ api_key: tmdbKey })}`, { delay: 60, strict: true });
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 401) throw new Error("TMDB rechaza la API key. Revísala en Ajustes.");
+      if (!(e instanceof HttpError && e.status === 404)) throw e;
+    }
+    const cover = poster(d?.poster_path);
+    if (cover) found++;
+    await db.items.update(it.key, { cover, extra: { ...it.extra, posterChecked: true } });
+    if ((n + 1) % 50 === 0 || n + 1 === todo.length) log(`películas: pósters ${n + 1}/${todo.length} (${found} encontrados)`);
+  }
+  return true;
+}
+
+/** Trae sinopsis, géneros, póster, director, reparto y plataformas de TMDB. Se puede detener y reanudar. */
 export async function completarPeliculas(tmdbKey: string, log: Log, stop: Stopper) {
   if (!tmdbKey) throw new Error("Falta la API key de TMDB (pestaña Ajustes).");
-  const todo = (await db.items.where("source").equals("letterboxd").toArray()).filter((i) => !i.extra.tmdbDone);
-  if (!todo.length) return log("películas: no queda nada por completar");
+  const all = await db.items.where("source").equals("letterboxd").toArray();
+  const posters = all.filter((i) => i.extra.tmdbDone && i.extra.tmdbId && !i.cover && !i.extra.posterChecked);
+  const todo = all.filter((i) => !i.extra.tmdbDone);
+  if (!todo.length && !posters.length) return log("películas: no queda nada por completar");
+  if (posters.length && !(await completarPosters(tmdbKey, posters, log, stop)))
+    return log("películas: detenido. Pulsa de nuevo para reanudar.");
+  if (!todo.length) return;
   log(`películas: completando ${todo.length} con TMDB`);
 
   let found = 0;
@@ -95,9 +124,11 @@ export async function completarPeliculas(tmdbKey: string, log: Log, stop: Stoppe
       await db.items.update(it.key, {
         synopsis: d.overview ?? "",
         genres: (d.genres ?? []).map((g: any) => g.name),
+        cover: poster(d.poster_path),
         extra: {
           ...it.extra,
           tmdbDone: true,
+          posterChecked: true,
           tmdbId: id,
           director: (d.credits?.crew ?? []).filter((c: any) => c.job === "Director").map((c: any) => c.name).join(", "),
           cast: (d.credits?.cast ?? []).slice(0, 5).map((c: any) => c.name),
