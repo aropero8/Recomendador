@@ -59,11 +59,11 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
         </label>
         <label>
           API key de Gemini (recomendaciones)
-          <input value={s.geminiKey} onChange={set("geminiKey")} type="password" autoCapitalize="none" autoComplete="off" />
+          <input value={s.geminiKey} onChange={set("geminiKey")} type="password" {...field} />
         </label>
         <label>
           Modelo de Gemini
-          <input value={s.geminiModel} onChange={set("geminiModel")} placeholder={DEFAULT_MODEL} autoCapitalize="none" />
+          <input value={s.geminiModel} onChange={set("geminiModel")} placeholder={DEFAULT_MODEL} {...field} />
         </label>
         <p className="hint">
           La clave de Gemini es gratuita: créala en Google AI Studio (aistudio.google.com, «Get API key»). Deja el modelo
@@ -83,7 +83,8 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
         <h2>Créditos</h2>
         <p className="hint">
           Esta aplicación usa la API de TMDB, pero no está avalada ni certificada por TMDB. Datos de anime y manga
-          de la API oficial de MyAnimeList; libros de Open Library. Resúmenes de Wikipedia (CC BY-SA).
+          de la API oficial de MyAnimeList; libros de Open Library. Resúmenes de Wikipedia (CC BY-SA). Recomendaciones
+          generadas con Gemini (Google): al pedirlas se envía a Google tu perfil de gustos y los títulos de esa categoría.
         </p>
       </section>
     </div>

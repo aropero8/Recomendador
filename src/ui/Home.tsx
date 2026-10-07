@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Item, ItemType, ITEM_TYPES, TYPE_LABEL } from "../types";
 import Cover from "./Cover";
 import { progress, scoreText, titles, when } from "./format";
-import { IconChevron, IconData, IconSettings } from "./icons";
+import { IconChevron, IconData, IconSettings, IconSparkle } from "./icons";
 
 const byScore = (a: Item, b: Item) => (b.userScore ?? -1) - (a.userScore ?? -1) || a.title.localeCompare(b.title);
 const byRecent = (a: Item, b: Item) => when(b) - when(a);
@@ -24,9 +24,10 @@ interface Props {
   openItem: (i: Item) => void;
   openData: () => void;
   openSettings: () => void;
+  onRecommend: () => void;
 }
 
-export default function Home({ items, openCategory, openItem, openData, openSettings }: Props) {
+export default function Home({ items, openCategory, openItem, openData, openSettings, onRecommend }: Props) {
   const groups = useMemo(() => {
     const g = {} as Record<ItemType, Item[]>;
     for (const t of ITEM_TYPES) g[t] = [];
@@ -72,6 +73,19 @@ export default function Home({ items, openCategory, openItem, openData, openSett
             <IconData />
           </button>
         </section>
+      )}
+
+      {!empty && items !== null && (
+        <button className="reco-hero" onClick={onRecommend}>
+          <span className="reco-hero-icon">
+            <IconSparkle />
+          </span>
+          <span className="reco-hero-text">
+            <strong>Recomiéndame</strong>
+            <small>Anime, manga, películas o libros según tus gustos</small>
+          </span>
+          <IconChevron />
+        </button>
       )}
 
       <div className="tiles">

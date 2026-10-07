@@ -8,6 +8,7 @@ export type View =
   | { v: "cat"; type: ItemType }
   | { v: "item"; type: ItemType; key: string } // ficha abierta encima de la pantalla anterior
   | { v: "book"; type: ItemType; key?: string } // formulario para añadir (sin key) o editar un libro
+  | { v: "reco"; type?: ItemType } // «Recomiéndame» (desde el inicio o desde una categoría)
   | { v: "data" }
   | { v: "settings" };
 

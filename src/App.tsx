@@ -6,9 +6,13 @@ import { db, isQuotaError, limpiarBaseDeDatos, quotaMessage, StorageInfo, storag
 import { completarLibros } from "./ingest/books";
 import { portadasLibros } from "./ingest/covers";
 import { actualizarAnimeManga, actualizarLibros, actualizarPeliculas } from "./ingest/update";
-import { addBook, BookInput, deleteBook, markAsRead, updateBook } from "./libros";
+import { copyText } from "./lib/clipboard";
+import { addBook, BookInput, deleteBook, markAsRead, today, updateBook } from "./libros";
 import { fusionarManga } from "./merge";
 import { isOverlay, useNav, View } from "./nav";
+import { profileForChat } from "./reco/profile";
+import { recomendar, updateSavedReco } from "./reco/recommend";
+import type { Reco } from "./reco/verify";
 import { loadSettings, saveSettings, Settings } from "./settings";
 import { loadSyncTimes, MissingSettings, SyncResult, SyncSource, SyncTimes, timeAgo } from "./sync";
 import { Item, ITEM_TYPES, ItemType, Log, TYPE_LABEL } from "./types";
@@ -18,11 +22,12 @@ import Category from "./ui/Category";
 import Data, { Counts } from "./ui/Data";
 import Detail from "./ui/Detail";
 import Home from "./ui/Home";
-import { IconBack, IconClose, IconData, IconPlus, IconRefresh, IconSettings } from "./ui/icons";
+import Recommend from "./ui/Recommend";
+import { IconBack, IconClose, IconData, IconPlus, IconRefresh, IconSettings, IconSparkle } from "./ui/icons";
 import { PULL_THRESHOLD, usePullToRefresh } from "./ui/pull";
 import SettingsTab from "./ui/SettingsTab";
 
-const TITLE: Partial<Record<View["v"], string>> = { data: "Datos", settings: "Ajustes" };
+const TITLE: Partial<Record<View["v"], string>> = { data: "Datos", settings: "Ajustes", reco: "Recomiéndame" };
 
 type SyncFn = (s: Settings, log: Log, stop: Stopper) => Promise<SyncResult>;
 
@@ -195,6 +200,33 @@ export default function App() {
     });
   };
 
+  /** «Añadir a pendientes» de un libro recomendado: con la portada y la sinopsis que trajo (si no, se busca después). */
+  const addRecoBook = async (r: Reco) => {
+    let key: string | undefined;
+    await run(async () => {
+      key = await addBook({ title: r.title, author: r.author ?? "", status: "plan", score: null, date: today(), priority: 3, cover: r.cover, olKey: typeof r.extId === "string" ? r.extId : undefined });
+      if (r.synopsis) await db.items.update(key, { synopsis: r.synopsis, "extra.synopsisSource": "openlibrary", "extra.synopsisUrl": r.url });
+      await updateSavedReco(r.type, r.id, { ...r, inPending: true, libraryKey: key });
+      setBanner({ text: `«${r.title}» añadido a tus pendientes`, done: true, autoHide: !!r.synopsis });
+    });
+    // Sin sinopsis: se busca cuando ha terminado lo anterior (así no hay dos procesos a la vez)
+    if (key && !r.synopsis)
+      sync(async (_s, log, stop) => {
+        await completarLibros(log, stop, new Set([key!]));
+        const it = await db.items.get(key!);
+        return { text: `«${r.title}» añadido a tus pendientes${it?.synopsis ? " con su sinopsis" : ""}` };
+      });
+  };
+
+  const copyProfile = async () => {
+    try {
+      await copyText(profileForChat(shown ?? []));
+      setBanner({ text: "Perfil copiado: pégalo en cualquier chat de IA y pídele lo que te apetezca.", done: true, autoHide: true });
+    } catch (e: any) {
+      setBanner({ text: e?.message ?? String(e), done: true });
+    }
+  };
+
   const catType = base.v === "cat" ? base.type : null;
   const upd = catType ? UPDATE[catType] : undefined;
   const pull = usePullToRefresh(main, upd && settings && !busy ? () => sync(upd.fn) : null);
@@ -221,6 +253,11 @@ export default function App() {
           </>
         )}
         <div className="actions">
+          {topLevel && (
+            <button className="icon sparkle" onClick={() => go({ v: "reco", type: catType ?? undefined })} aria-label="Recomiéndame" title="Recomiéndame">
+              <IconSparkle />
+            </button>
+          )}
           <button className={`icon ${base.v === "data" ? "on" : ""}`} onClick={() => base.v !== "data" && go({ v: "data" })} aria-label="Datos" title="Datos">
             <IconData />
           </button>
@@ -255,6 +292,7 @@ export default function App() {
             openItem={(i) => go({ v: "item", type: i.type, key: i.key })}
             openData={() => go({ v: "data" })}
             openSettings={() => go({ v: "settings" })}
+            onRecommend={() => go({ v: "reco" })}
           />
         )}
         {catType && (
@@ -271,6 +309,17 @@ export default function App() {
               onClick: () => sync(upd!.fn),
             }}
             openData={() => go({ v: "data" })}
+          />
+        )}
+        {base.v === "reco" && (
+          <Recommend
+            items={shown ?? []}
+            initialType={base.type}
+            busy={busy}
+            onRecommend={(req) => sync((s, log, stop) => recomendar(shown ?? [], req, s, log, stop))}
+            onCopyProfile={copyProfile}
+            onAddBook={addRecoBook}
+            onOpenItem={(r) => r.libraryKey && go({ v: "item", type: r.type, key: r.libraryKey })}
           />
         )}
         {base.v === "data" && (
