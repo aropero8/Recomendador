@@ -3,6 +3,7 @@ import { removeCover } from "./covers/user";
 import { db, getMeta, putInBatches, setMeta } from "./db";
 import { apiGet, applyUserEdits, DELETED_EXCEL, EDITABLE, OL, olCover, titleMatch } from "./ingest/books";
 import { qs } from "./lib/http";
+import { saveFile } from "./lib/save";
 import { norm } from "./lib/text";
 import { BOOK_SOURCES, isBookSource, type Item, type Log, type Status } from "./types";
 
@@ -203,6 +204,8 @@ export async function exportBooksXlsx(log: Log) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Libros");
   const name = `libros-recomendador-${today()}.xlsx`; // .gitignore: *.xlsx
-  XLSX.writeFile(wb, name);
+  const xlsx = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+  const saved = await saveFile(name, new Blob([xlsx], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  if (!saved) return log("Excel sin guardar: has cerrado «Compartir».");
   log(`Libros exportados a Excel: ${items.length} (${name})`);
 }
