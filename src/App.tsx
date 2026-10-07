@@ -1,7 +1,7 @@
 import { liveQuery } from "dexie";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { requestPersistence } from "./backup";
-import { db, Stopper } from "./db";
+import { db, isQuotaError, limpiarBaseDeDatos, quotaMessage, StorageInfo, storageInfo, Stopper } from "./db";
 import { useNav, View } from "./nav";
 import { loadSettings, saveSettings, Settings } from "./settings";
 import { Item, ITEM_TYPES, TYPE_LABEL } from "./types";
@@ -22,7 +22,7 @@ export default function App() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [stoppable, setStoppable] = useState(false); // hay un proceso largo que se puede detener
   const stopper = useRef<Stopper>({ stopped: false });
-  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
   const main = useRef<HTMLElement>(null);
   const prev = useRef<View>(view);
 
@@ -30,7 +30,13 @@ export default function App() {
 
   useEffect(() => {
     loadSettings().then(setSettings);
-    requestPersistence().then(setPersisted).catch(() => setPersisted(null));
+    // Pide almacenamiento persistente, corrige registros mal guardados y mide el espacio usado
+    requestPersistence()
+      .catch(() => null)
+      .then(() => limpiarBaseDeDatos(addLog))
+      .catch(async (e) => addLog(isQuotaError(e) ? await quotaMessage() : `Error al revisar la base de datos: ${e?.message ?? e}`))
+      .then(() => storageInfo())
+      .then(setStorage, () => setStorage(null));
     // Se actualiza solo cada vez que cambia la base de datos (también durante una importación)
     const sub = liveQuery(() => db.items.toArray()).subscribe({
       next: setItems,
@@ -75,10 +81,11 @@ export default function App() {
     try {
       await fn(stopper.current);
     } catch (e: any) {
-      addLog(`Error: ${e?.message ?? e}`);
+      addLog(isQuotaError(e) ? await quotaMessage() : `Error: ${e?.message ?? e}`);
     } finally {
       setBusy(false);
       setStoppable(false);
+      storageInfo().then(setStorage, () => null);
     }
   };
 
@@ -130,7 +137,7 @@ export default function App() {
               run={run}
               addLog={addLog}
               stoppable={stoppable}
-              persisted={persisted}
+              storage={storage}
               onStop={() => (stopper.current.stopped = true)}
             />
           </div>

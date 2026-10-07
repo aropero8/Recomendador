@@ -1,4 +1,4 @@
-import { db, Stopper } from "../db";
+import { BatchWriter, db, isQuotaError, limpiarBaseDeDatos, putInBatches, quotaMessage, Stopper } from "../db";
 import { qs } from "../lib/http";
 import type { Settings } from "../settings";
 import { ITEM_TYPES, Log, TYPE_LABEL } from "../types";
@@ -9,20 +9,26 @@ import { importMal, malGet, malPicture } from "./mal";
 // Versión de la búsqueda de portadas del Excel: lo marcado con otra versión se vuelve a intentar
 const COVER_V = 2;
 
-/** Ejecuta un paso; si falla (clave mal puesta, sin conexión...) lo apunta y deja seguir con el siguiente. */
+/**
+ * Ejecuta un paso; si falla (clave mal puesta, sin conexión...) lo apunta y deja seguir con el siguiente.
+ * Si el navegador se queda sin espacio no tiene sentido seguir: se explica y se detiene todo.
+ */
 export async function step(name: string, log: Log, stop: Stopper, fn: () => Promise<unknown>) {
   if (stop.stopped) return;
   try {
     await fn();
   } catch (e: any) {
-    log(`${name}: ${e?.message ?? e} Sigo con lo demás.`);
+    if (isQuotaError(e)) {
+      stop.stopped = true;
+      log(await quotaMessage());
+    } else log(`${name}: ${e?.message ?? e} Sigo con lo demás.`);
   }
 }
 
 /** Portadas de Open Library guardadas sin ?default=false (versiones anteriores): se corrigen sin peticiones. */
 export async function arreglarUrlsOpenLibrary() {
   const fix = (await db.items.toArray()).filter((i) => i.cover?.startsWith("https://covers.openlibrary.org/") && !i.cover.includes("default=false"));
-  if (fix.length) await db.items.bulkPut(fix.map((i) => ({ ...i, cover: `${i.cover}?default=false` })));
+  if (fix.length) await putInBatches(fix.map((i) => ({ ...i, cover: `${i.cover}?default=false` })));
 }
 
 /** Anime y manga de tu lista de MAL sin portada: se vuelve a pedir (MAL es rápido, sin límite de 1/s). */
@@ -38,15 +44,20 @@ export async function portadasMal(s: Settings, log: Log, stop: Stopper) {
     if (!todo.length) return;
   }
   log(`MAL: pidiendo la portada de ${todo.length} títulos uno a uno`);
+  const out = new BatchWriter();
   let found = 0;
-  for (const [n, it] of todo.entries()) {
-    if (stop.stopped) return log(`MAL: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
-    const cover = malPicture(await malGet(`/v2/${it.type}/${it.extra.malId}?fields=main_picture`, s.malClientId));
-    if (cover) {
-      found++;
-      await db.items.update(it.key, { cover });
+  try {
+    for (const [n, it] of todo.entries()) {
+      if (stop.stopped) return log(`MAL: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
+      const cover = malPicture(await malGet(`/v2/${it.type}/${it.extra.malId}?fields=main_picture`, s.malClientId));
+      if (cover) {
+        found++;
+        await out.put({ ...it, cover });
+      }
+      if ((n + 1) % 20 === 0 || n + 1 === todo.length) log(`MAL: ${n + 1}/${todo.length} (${found} portadas)`);
     }
-    if ((n + 1) % 20 === 0 || n + 1 === todo.length) log(`MAL: ${n + 1}/${todo.length} (${found} portadas)`);
+  } finally {
+    await out.flush();
   }
 }
 
@@ -59,42 +70,47 @@ export async function portadasMangaExcel(s: Settings, log: Log, stop: Stopper) {
   const malManga = all.filter((i) => i.source === "mal" && i.type === "manga");
   const mangas = all.filter((i) => i.source === "excel" && i.type === "manga" && !i.cover);
 
-  let copied = 0;
-  for (const it of mangas) {
+  const copies = mangas.flatMap((it) => {
     const cover = malSeries(it, malManga)?.cover;
-    if (cover) {
-      copied++;
-      await db.items.update(it.key, { cover });
-    }
-  }
+    return cover ? [{ ...it, cover }] : [];
+  });
+  await putInBatches(copies);
+  const copied = copies.length;
   if (copied) log(`manga: ${copied} portadas copiadas de tu lista de MAL`);
 
   const todo = mangas.filter((i) => !malSeries(i, malManga) && i.extra.malSearchV !== COVER_V);
   if (!todo.length) return;
   if (!s.malClientId) return log(`manga: ${todo.length} series sin portada. Pon el Client ID de MAL en Ajustes para buscarlas.`);
   log(`manga: buscando ${todo.length} series en MAL`);
+  const out = new BatchWriter();
   let found = 0;
-  for (const [n, it] of todo.entries()) {
-    if (stop.stopped) return log(`manga: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
-    const q = cleanTitle(it.title);
-    let best: any;
-    if (q.length >= 3) {
-      // MAL exige al menos 3 caracteres en la búsqueda
-      const js = await malGet(`/v2/manga?${qs({ q, limit: 3, fields: "alternative_titles,main_picture" })}`, s.malClientId);
-      best = ((js?.data ?? []) as any[])
-        .map(({ node }) => {
-          const alt = node.alternative_titles ?? {};
-          const titles: string[] = [node.title, alt.en, alt.ja, ...(alt.synonyms ?? [])].filter(Boolean);
-          return { node, m: Math.max(0, ...titles.map((t) => titleMatch(q, t))) };
-        })
-        .filter((x) => x.m > 0)
-        .sort((a, b) => b.m - a.m)[0]?.node;
+  try {
+    for (const [n, it] of todo.entries()) {
+      if (stop.stopped) return log(`manga: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
+      const best = await buscarMangaEnMal(it.title, s.malClientId);
+      const cover = malPicture(best);
+      if (cover) found++;
+      await out.put({ ...it, cover, extra: { ...it.extra, malSearchV: COVER_V, malId: best?.id ?? it.extra.malId } });
+      if ((n + 1) % 10 === 0 || n + 1 === todo.length) log(`manga: ${n + 1}/${todo.length} (${found} portadas)`);
     }
-    const cover = malPicture(best);
-    if (cover) found++;
-    await db.items.update(it.key, { cover, extra: { ...it.extra, malSearchV: COVER_V, malId: best?.id ?? it.extra.malId } });
-    if ((n + 1) % 10 === 0 || n + 1 === todo.length) log(`manga: ${n + 1}/${todo.length} (${found} portadas)`);
+  } finally {
+    await out.flush();
   }
+}
+
+/** Busca una serie en MAL y devuelve el resultado cuyo título (o título alternativo) coincide; exacto mejor que parcial. */
+async function buscarMangaEnMal(title: string, clientId: string) {
+  const q = cleanTitle(title);
+  if (q.length < 3) return undefined; // MAL exige al menos 3 caracteres en la búsqueda
+  const js = await malGet(`/v2/manga?${qs({ q, limit: 3, fields: "alternative_titles,main_picture" })}`, clientId);
+  return ((js?.data ?? []) as any[])
+    .map(({ node }) => {
+      const alt = node.alternative_titles ?? {};
+      const titles: string[] = [node.title, alt.en, alt.ja, ...(alt.synonyms ?? [])].filter(Boolean);
+      return { node, m: Math.max(0, ...titles.map((t) => titleMatch(q, t))) };
+    })
+    .filter((x) => x.m > 0)
+    .sort((a, b) => b.m - a.m)[0]?.node;
 }
 
 /** Películas: póster de TMDB para las que ya tienen tmdbId y no tienen portada; las no completadas se completan. */
@@ -113,13 +129,18 @@ export async function portadasLibros(log: Log, stop: Stopper) {
   const todo = (await db.items.where("source").equals("excel").toArray()).filter((i) => !i.cover && i.extra.coverV !== COVER_V);
   if (!todo.length) return;
   log(`libros: buscando la portada de ${todo.length} títulos en Open Library y Wikipedia (1 petición por segundo)`);
+  const out = new BatchWriter();
   let found = 0;
-  for (const [n, it] of todo.entries()) {
-    if (stop.stopped) return log(`libros: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
-    const cover = await buscarPortadaLibro(it);
-    if (cover) found++;
-    await db.items.update(it.key, { cover, extra: { ...it.extra, coverV: COVER_V } });
-    if ((n + 1) % 5 === 0 || n + 1 === todo.length) log(`libros: portadas ${n + 1}/${todo.length} (${found} encontradas)`);
+  try {
+    for (const [n, it] of todo.entries()) {
+      if (stop.stopped) return log(`libros: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
+      const cover = await buscarPortadaLibro(it);
+      if (cover) found++;
+      await out.put({ ...it, cover, extra: { ...it.extra, coverV: COVER_V } });
+      if ((n + 1) % 5 === 0 || n + 1 === todo.length) log(`libros: portadas ${n + 1}/${todo.length} (${found} encontradas)`);
+    }
+  } finally {
+    await out.flush();
   }
 }
 
@@ -135,7 +156,8 @@ export async function resumenPortadas(log: Log) {
  * (MAL, manga del Excel, películas y libros). Se puede detener y reanudar.
  */
 export async function descargarPortadas(s: Settings, log: Log, stop: Stopper) {
-  await arreglarUrlsOpenLibrary();
+  await step("limpieza", log, stop, () => limpiarBaseDeDatos(log));
+  await step("limpieza", log, stop, arreglarUrlsOpenLibrary);
   await step("MAL", log, stop, () => portadasMal(s, log, stop));
   await step("manga", log, stop, () => portadasMangaExcel(s, log, stop));
   await step("películas", log, stop, () => portadasPeliculas(s, log, stop));

@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { bulkUpsert, db, Stopper } from "../db";
+import { BatchWriter, bulkUpsert, db, Stopper } from "../db";
 import { getJson, HttpError, qs } from "../lib/http";
 import { norm, slug } from "../lib/text";
 import type { Item, ItemType, Log, Status } from "../types";
@@ -291,55 +291,60 @@ export async function completarLibros(log: Log, stop: Stopper) {
 
   const bySource: Record<string, number> = {};
   let covers = 0;
-  for (const [n, it] of todo.entries()) {
-    if (stop.stopped) return log(`libros: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
-    const author = firstAuthor(it);
-    const title = cleanTitle(it.title);
-    const { cats = [], lookupDone, olTried, coverChecked, ...extra } = it.extra; // cats/flags de versiones anteriores
-    const excelGenres = it.genres.filter((g) => !cats.includes(g));
-    let subjects: string[] = cats;
-    let desc = "";
-    let source: string | undefined;
-    let url: string | undefined;
-    let firstSentence = "";
-    let cover = it.cover;
-    const keepCover = (c?: string) => {
-      if (!cover && c) [cover, covers] = [c, covers + 1];
-    };
+  const out = new BatchWriter();
+  try {
+    for (const [n, it] of todo.entries()) {
+      if (stop.stopped) return log(`libros: detenido en ${n}/${todo.length}. Pulsa de nuevo para reanudar.`);
+      const author = firstAuthor(it);
+      const title = cleanTitle(it.title);
+      const { cats = [], lookupDone, olTried, coverChecked, ...extra } = it.extra; // cats/flags de versiones anteriores
+      const excelGenres = it.genres.filter((g) => !cats.includes(g));
+      let subjects: string[] = cats;
+      let desc = "";
+      let source: string | undefined;
+      let url: string | undefined;
+      let firstSentence = "";
+      let cover = it.cover;
+      const keepCover = (c?: string) => {
+        if (!cover && c) [cover, covers] = [c, covers + 1];
+      };
 
-    const es = await wikipedia("es", title, author);
-    if (es) {
-      [desc, source, url] = [es.desc, "wikipedia-es", es.url];
-      keepCover(es.thumb);
-    }
-    // Open Library: si ya se consultó con este mismo título no se repite
-    if (!desc && !(extra.olChecked && title === it.title)) {
-      const ol = await openLibrary(title, author);
-      extra.olChecked = true;
-      if (ol?.subjects.length) subjects = ol.subjects;
-      if (ol?.desc) [desc, source] = [ol.desc, "openlibrary"];
-      firstSentence = ol?.firstSentence ?? "";
-      keepCover(ol?.cover);
-    }
-    if (!desc) {
-      const en = await wikipedia("en", title, author);
-      if (en) {
-        [desc, source, url] = [en.desc, "wikipedia-en", en.url];
-        keepCover(en.thumb);
+      const es = await wikipedia("es", title, author);
+      if (es) {
+        [desc, source, url] = [es.desc, "wikipedia-es", es.url];
+        keepCover(es.thumb);
       }
-    }
-    if (!desc && firstSentence) [desc, source] = [firstSentence, "openlibrary-frase"];
-    if (desc) bySource[source!] = (bySource[source!] ?? 0) + 1;
+      // Open Library: si ya se consultó con este mismo título no se repite
+      if (!desc && !(extra.olChecked && title === it.title)) {
+        const ol = await openLibrary(title, author);
+        extra.olChecked = true;
+        if (ol?.subjects.length) subjects = ol.subjects;
+        if (ol?.desc) [desc, source] = [ol.desc, "openlibrary"];
+        firstSentence = ol?.firstSentence ?? "";
+        keepCover(ol?.cover);
+      }
+      if (!desc) {
+        const en = await wikipedia("en", title, author);
+        if (en) {
+          [desc, source, url] = [en.desc, "wikipedia-en", en.url];
+          keepCover(en.thumb);
+        }
+      }
+      if (!desc && firstSentence) [desc, source] = [firstSentence, "openlibrary-frase"];
+      if (desc) bySource[source!] = (bySource[source!] ?? 0) + 1;
 
-    await db.items.update(it.key, {
-      synopsis: desc,
-      cover,
-      genres: [...new Set([...excelGenres, ...subjects])],
-      extra: { ...extra, cats: subjects, lookupV: LOOKUP_V, synopsisSource: source, synopsisUrl: url },
-      embedding: undefined,
-    });
-    const found = Object.values(bySource).reduce((a, b) => a + b, 0);
-    if ((n + 1) % 5 === 0 || n + 1 === todo.length) log(`libros: ${n + 1}/${todo.length} (${found} sinopsis, ${covers} portadas de paso)`);
+      await out.put({
+        ...it,
+        synopsis: desc,
+        cover,
+        genres: [...new Set([...excelGenres, ...subjects])],
+        extra: { ...extra, cats: subjects, lookupV: LOOKUP_V, synopsisSource: source, synopsisUrl: url },
+      });
+      const found = Object.values(bySource).reduce((a, b) => a + b, 0);
+      if ((n + 1) % 5 === 0 || n + 1 === todo.length) log(`libros: ${n + 1}/${todo.length} (${found} sinopsis, ${covers} portadas de paso)`);
+    }
+  } finally {
+    await out.flush();
   }
 
   const found = Object.values(bySource).reduce((a, b) => a + b, 0);

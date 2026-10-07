@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, putInBatches } from "./db";
 import { ITEM_TYPES, type Item, type Log } from "./types";
 
 // Copia de seguridad de la biblioteca en un .json. No incluye las claves de Ajustes
@@ -48,7 +48,7 @@ export async function restoreBackup(file: File, log: Log) {
   if (!confirm(`Restaurar la copia del ${date}: ${items.length} títulos (${replaced} sustituirán a los que ya tienes). ¿Continuar?`)) {
     return log("Restauración cancelada");
   }
-  await db.items.bulkPut(items);
+  await putInBatches(items);
   log(`Copia restaurada: ${items.length} títulos${bad ? ` (${bad} entradas no válidas ignoradas)` : ""}`);
 }
 
