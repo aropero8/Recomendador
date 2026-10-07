@@ -140,7 +140,7 @@ function editDistance(a: string, b: string) {
  * Solo cuentan nombres de personas (≤ 4 palabras): «Conferencia "Lev Tolstoĭ i mirovaja literatura"»
  * no es Tolstói.
  */
-function authorMatch(excel: string, names: string[] = []) {
+export function authorMatch(excel: string, names: string[] = []) {
   const toks = (s: string) => words(s).trim().split(" ").filter((w) => w.length >= 4);
   const mine = toks(excel);
   const people = names.filter((n) => words(n).trim().split(" ").length <= 4);
