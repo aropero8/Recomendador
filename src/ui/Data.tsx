@@ -5,7 +5,9 @@ import { importBooks } from "../ingest/books";
 import { completarDatos } from "../ingest/complete";
 import { descargarPortadas } from "../ingest/covers";
 import { importLetterboxd } from "../ingest/letterboxd";
-import { importMal } from "../ingest/mal";
+import { actualizarAnimeManga, actualizarPeliculas } from "../ingest/update";
+import { exportBooksXlsx } from "../libros";
+import { markSynced } from "../sync";
 import type { Settings } from "../settings";
 import { ITEM_TYPES, ItemType, Log, TYPE_LABEL } from "../types";
 
@@ -61,23 +63,47 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
 
       <section>
         <h2>Anime y manga</h2>
-        <p className="hint">Lee tu lista pública de MyAnimeList{settings.malUser ? ` (${settings.malUser})` : ""}.</p>
-        <button disabled={busy} onClick={() => run(() => importMal(settings.malUser, settings.malClientId, addLog))}>
-          Importar desde MyAnimeList
+        <p className="hint">
+          Lee tu lista pública de MyAnimeList{settings.malUser ? ` (${settings.malUser})` : ""} y aplica los cambios: nuevos, notas,
+          estados y progreso; quita lo que ya no esté en la lista. También con el botón de actualizar de Anime o Manga.
+        </p>
+        <button disabled={busy} onClick={() => run(async (stop) => void (await actualizarAnimeManga(settings, addLog, stop)), true)}>
+          Actualizar desde MyAnimeList
         </button>
       </section>
 
       <section>
         <h2>Películas</h2>
-        <p className="hint">Elige el ZIP que exportas desde Letterboxd.</p>
-        <input type="file" accept=".zip" onChange={(e) => setZip(e.target.files?.[0] ?? null)} />
-        <button disabled={busy || !zip} onClick={() => run(() => importLetterboxd(zip!, addLog))}>
-          Importar películas
+        <p className="hint">
+          El RSS de Letterboxd{settings.letterboxdUser ? ` (${settings.letterboxdUser})` : ""} trae tus últimas ~50 entradas del diario:
+          añade las nuevas, actualiza notas y pasa a vistas las de la watchlist. Para sincronizar todo el historial, sube el ZIP.
+        </p>
+        <button disabled={busy || !settings.letterboxdUser} onClick={() => run(async (stop) => void (await actualizarPeliculas(settings, addLog, stop)), true)}>
+          Actualizar desde el RSS
+        </button>
+        <label>
+          ZIP exportado de Letterboxd
+          <input type="file" accept=".zip" onChange={(e) => setZip(e.target.files?.[0] ?? null)} />
+        </label>
+        <button
+          disabled={busy || !zip}
+          onClick={() =>
+            run(async () => {
+              await importLetterboxd(zip!, addLog);
+              await markSynced("letterboxd");
+            })
+          }
+        >
+          Importar el ZIP
         </button>
       </section>
 
       <section>
         <h2>Libros y manga en papel</h2>
+        <p className="hint">
+          Los libros nuevos se apuntan en la categoría Libros («Añadir libro»). El Excel queda como importación inicial: al
+          reimportarlo se respetan los cambios hechos en la app y no vuelven los libros que hayas eliminado.
+        </p>
         <label>
           Libros leídos (.xlsx)
           <input type="file" accept=".xlsx" onChange={(e) => setLeidos(e.target.files?.[0] ?? null)} />
@@ -91,6 +117,9 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
           onClick={() => run(() => importBooks(leidos!, sinLeer!, settings.sheets, addLog))}
         >
           Importar libros
+        </button>
+        <button className="ghost" disabled={busy} onClick={() => run(() => exportBooksXlsx(addLog))}>
+          Exportar libros a Excel
         </button>
       </section>
 

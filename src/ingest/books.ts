@@ -1,8 +1,8 @@
 import * as XLSX from "xlsx";
-import { BatchWriter, bulkUpsert, db, Stopper } from "../db";
+import { BatchWriter, bulkUpsert, db, getMeta, Stopper } from "../db";
 import { getJson, HttpError, qs } from "../lib/http";
 import { norm, slug } from "../lib/text";
-import type { Item, ItemType, Log, Status } from "../types";
+import { BOOK_SOURCES, isBookSource, type Item, type ItemType, type Log, type Status } from "../types";
 
 const COLS: Record<string, string> = {
   title: "title", titulo: "title",
@@ -342,10 +342,10 @@ const OL_V = 2; // versión de la comparación con Open Library (2: también el 
  * detener y reanudar (extra.lookupV marca lo ya intentado). Las series de manga que ya están en
  * MAL no se buscan.
  */
-export async function completarLibros(log: Log, stop: Stopper) {
+export async function completarLibros(log: Log, stop: Stopper, only?: Set<string>) {
   const all = await db.items.toArray();
   const malManga = all.filter((i) => i.source === "mal" && i.type === "manga");
-  const books = all.filter((i) => i.source === "excel");
+  const books = all.filter((i) => isBookSource(i) && (!only || only.has(i.key)));
   const inMal = books.filter((i) => malSeries(i, malManga)).length;
   if (inMal) log(`libros: ${inMal} series de manga ya están en MAL; no se buscan`);
 
@@ -422,7 +422,8 @@ export async function completarLibros(log: Log, stop: Stopper) {
     const det = Object.entries(bySource).map(([k, v]) => `${k}: ${v}`).join(", ");
     log(`libros: ${found} sinopsis encontradas de ${todo.length} buscadas${det ? ` (${det})` : ""}`);
   }
-  const missing = (await db.items.where("source").equals("excel").toArray()).filter((i) => !i.synopsis && !malSeries(i, malManga));
+  if (only) return; // al añadir un libro no hace falta el resumen de toda la biblioteca
+  const missing = (await db.items.where("source").anyOf([...BOOK_SOURCES]).toArray()).filter((i) => !i.synopsis && !malSeries(i, malManga));
   log(missing.length ? `libros sin sinopsis (${missing.length}): ${missing.map((i) => i.title).join(" · ")}` : "libros: todos tienen sinopsis");
 }
 
@@ -464,6 +465,25 @@ function groupManga(rows: Row[]): Entry[] {
 
 // ---------- importación ----------
 
+/** Claves de libros del Excel borrados en la app (en la tabla meta), para que no vuelvan al reimportar. */
+export const DELETED_EXCEL = "deletedExcel";
+
+/** Campos de un libro que se pueden editar en la app. */
+export const EDITABLE = ["title", "status", "userScore", "author", "date", "yearRead", "pages", "format", "priority"] as const;
+
+/** Aplica las ediciones hechas en la app (extra.userEdits) sobre un libro, p. ej. recién leído del Excel. */
+export function applyUserEdits(it: Item, ue?: Record<string, any>): Item {
+  if (!ue || !Object.keys(ue).length) return it;
+  const { title, status, userScore, ...ex } = ue;
+  return {
+    ...it,
+    ...(title !== undefined && { title }),
+    ...(status !== undefined && { status }),
+    ...("userScore" in ue && { userScore }),
+    extra: { ...it.extra, ...ex, userEdits: ue },
+  };
+}
+
 export async function importBooks(readFile: File, unreadFile: File, sheetsCsv: string, log: Log) {
   const read = groupManga(readSheets(await readFile.arrayBuffer()));
   const only = sheetsCsv.split(",").map((s) => s.trim()).filter(Boolean);
@@ -502,23 +522,35 @@ export async function importBooks(readFile: File, unreadFile: File, sheetsCsv: s
       volumes: e.volumes,
     },
   }));
+  // Los que borraste en la app no vuelven
+  const deleted = new Set(await getMeta<string[]>(DELETED_EXCEL, []));
+  const kept = items.filter((i) => !deleted.has(i.key));
+  if (kept.length < items.length) log(`libros/manga: ${items.length - kept.length} que borraste en la app no se vuelven a importar`);
+
   // Sin buscar sinopsis ni portadas aquí (ver completarLibros); se conserva lo que ya hubiera
-  await bulkUpsert(items, (item, old) => ({
-    ...item,
-    synopsis: old.synopsis,
-    cover: old.cover,
-    genres: [...item.genres, ...(old.extra.cats ?? [])],
-    extra: {
-      ...item.extra,
-      cats: old.extra.cats,
-      olChecked: old.extra.olChecked,
-      lookupV: old.extra.lookupV,
-      coverV: old.extra.coverV,
-      synopsisSource: old.extra.synopsisSource,
-      synopsisUrl: old.extra.synopsisUrl,
-    },
-  }));
-  // Lo que ya no sale del Excel (o se ha agrupado de otra forma) se quita para que no quede repetido
+  // y lo que cambiaste en la app (extra.userEdits) gana a lo que diga el Excel
+  await bulkUpsert(kept, (item, old) =>
+    applyUserEdits(
+      {
+        ...item,
+        synopsis: old.synopsis,
+        cover: old.cover,
+        genres: [...item.genres, ...(old.extra.cats ?? [])],
+        extra: {
+          ...item.extra,
+          cats: old.extra.cats,
+          olChecked: old.extra.olChecked,
+          lookupV: old.extra.lookupV,
+          coverV: old.extra.coverV,
+          synopsisSource: old.extra.synopsisSource,
+          synopsisUrl: old.extra.synopsisUrl,
+        },
+      },
+      old.extra.userEdits,
+    ),
+  );
+  // Lo que ya no sale del Excel (o se ha agrupado de otra forma) se quita para que no quede repetido.
+  // Solo entradas del Excel: los libros apuntados en la app (source "app") nunca se tocan.
   const fresh = new Set(items.map((i) => i.key));
   const stale = (await db.items.where("source").equals("excel").primaryKeys()).filter((k) => !fresh.has(k as string));
   if (stale.length) {

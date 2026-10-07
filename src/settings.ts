@@ -4,10 +4,11 @@ export interface Settings {
   malUser: string;
   malClientId: string;
   tmdbKey: string;
+  letterboxdUser: string; // para leer su RSS público
   sheets: string; // pestañas de "Sin leer" a usar, separadas por comas
 }
 
-const DEFAULTS: Settings = { malUser: "", malClientId: "", tmdbKey: "", sheets: "" };
+const DEFAULTS: Settings = { malUser: "", malClientId: "", tmdbKey: "", letterboxdUser: "", sheets: "" };
 
 export async function loadSettings(): Promise<Settings> {
   const { value } = await Preferences.get({ key: "settings" });

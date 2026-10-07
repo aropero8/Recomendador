@@ -5,12 +5,13 @@ import { ITEM_TYPES, type Item, type Log } from "./types";
 // Copia de seguridad de la biblioteca en un .json. No incluye las claves de Ajustes
 // (por si el archivo se comparte) ni los embeddings (se regeneran y pesan mucho).
 const FORMAT = "recomendador-backup";
-const VERSION = 2; // 2: incluye las portadas elegidas a mano
+const VERSION = 3; // 2: portadas elegidas a mano; 3: meta (libros del Excel borrados, fechas de actualización)
 
 export async function exportBackup(log: Log) {
   const items = (await db.items.toArray()).map(({ embedding, ...i }) => i);
   const covers = await exportCovers();
-  const data = { format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(), items, covers };
+  const meta = await db.meta.toArray();
+  const data = { format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(), items, covers, meta };
   const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -52,6 +53,7 @@ export async function restoreBackup(file: File, log: Log) {
   }
   await putInBatches(items);
   const covers = Array.isArray(data.covers) ? await importCovers(data.covers as CoverBackup[]) : 0;
+  if (Array.isArray(data.meta)) await db.meta.bulkPut(data.meta.filter((m: any) => typeof m?.key === "string"));
   log(`Copia restaurada: ${items.length} títulos${covers ? ` y ${covers} portadas elegidas a mano` : ""}${bad ? ` (${bad} entradas no válidas ignoradas)` : ""}`);
 }
 

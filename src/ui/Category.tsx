@@ -26,9 +26,11 @@ interface Props {
   items: Item[];
   type: ItemType;
   onOpen: (key: string) => void;
+  updated?: string; // «Actualizado hace 2 días» (anime, manga y películas)
+  onAdd?: () => void; // libros: «Añadir libro»
 }
 
-export default function Category({ items, type, onOpen }: Props) {
+export default function Category({ items, type, onOpen, updated, onAdd }: Props) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<Status | "all">("all");
   const [sort, setSort] = useState<Sort>("score");
@@ -67,6 +69,11 @@ export default function Category({ items, type, onOpen }: Props) {
   return (
     <div className="stack">
       <div className="filters">
+        {onAdd && (
+          <button className="add-book" onClick={onAdd}>
+            + Añadir libro
+          </button>
+        )}
         <input type="search" placeholder="Buscar por título" value={query} onChange={(e) => setQuery(e.target.value)} />
         <div className="chips" role="group" aria-label="Estado">
           {STATUS_FILTERS.map(([s, label]) => (
@@ -85,6 +92,7 @@ export default function Category({ items, type, onOpen }: Props) {
         <p className="hint">
           {shown.length} {shown.length === 1 ? "título" : "títulos"}
           {avg != null && ` · nota media ${avg.toFixed(1)} (${rated.length} con nota)`}
+          {updated && ` · ${updated}`}
         </p>
       </div>
 

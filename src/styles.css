@@ -71,9 +71,10 @@ section { background: var(--panel); border: 1px solid var(--line); border-radius
 
 button { font: inherit; font-weight: 600; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 11px 14px; cursor: pointer; }
 button:disabled { opacity: 0.45; cursor: default; }
-button:focus-visible, input:focus-visible, a:focus-visible, .detail:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible, .detail:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .detail:focus { outline: none; }
-input { font: inherit; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+input, select { font: inherit; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+select { appearance: auto; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; color: var(--muted); }
 .hint { margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
 .empty { text-align: center; color: var(--muted); padding: 28px 12px; margin: 0; }
@@ -185,3 +186,37 @@ button.ghost:active { background: var(--line); }
 .picker-file:focus-within span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .error { color: #d9534f; margin: 0; }
 @media (min-width: 720px) { .detail-side > button { width: 100%; } }
+
+/* ---------- actualizar ---------- */
+.banner {
+  display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 0.88rem;
+  background: var(--panel); border-bottom: 1px solid var(--line); color: var(--muted); position: sticky; top: 56px; z-index: 2;
+}
+.banner span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banner.done { color: var(--ink); }
+.banner.done span { white-space: normal; }
+button.link { background: none; color: var(--accent); padding: 4px 6px; font-weight: 600; }
+.update-all { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+
+/* ---------- libros: añadir, editar ---------- */
+button.add-book { align-self: flex-start; background: var(--book); color: var(--on-cat); }
+.book-form { padding: 18px 16px 40px; }
+.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; color: var(--muted); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.suggestions { list-style: none; margin: -6px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; gap: 2px; }
+.suggestions li.hint { padding: 8px; }
+.suggestions button { display: flex; gap: 10px; align-items: center; width: 100%; background: none; color: var(--ink); text-align: left; padding: 6px; font-weight: 400; border-radius: 6px; }
+.suggestions button:hover, .suggestions button:focus-visible { background: var(--bg); }
+.suggestions img, .sug-ph { width: 34px; height: 50px; object-fit: cover; border-radius: 3px; flex: none; background: var(--line); }
+.suggestions strong { display: block; font-size: 0.92rem; }
+.suggestions small { color: var(--muted); font-size: 0.8rem; }
+.picked { display: flex; gap: 10px; align-items: center; }
+.picked img { width: 34px; height: 50px; object-fit: cover; border-radius: 3px; }
+.warn { margin: 0; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--movie) 18%, transparent); color: var(--ink); font-size: 0.9rem; }
+.book-actions { display: flex; flex-direction: column; gap: 10px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mark-read, .confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.confirm p { margin: 0; }
+button.danger { background: #c0392b; color: #fff; }
+button.danger-text { color: #c0392b; }
+@media (prefers-color-scheme: dark) { button.danger-text { color: #ff8a7a; } }

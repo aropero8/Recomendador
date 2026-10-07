@@ -18,6 +18,10 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
           <input value={s.malClientId} onChange={set("malClientId")} type="password" autoCapitalize="none" />
         </label>
         <label>
+          Usuario de Letterboxd
+          <input value={s.letterboxdUser} onChange={set("letterboxdUser")} autoCapitalize="none" placeholder="el de letterboxd.com/usuario" />
+        </label>
+        <label>
           API key de TMDB (v3, la corta)
           <input value={s.tmdbKey} onChange={set("tmdbKey")} type="password" autoCapitalize="none" />
         </label>
