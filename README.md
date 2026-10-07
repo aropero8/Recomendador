@@ -20,6 +20,17 @@ de Wikipedia en español, Open Library y Wikipedia en inglés, y portadas de Ope
 Library o Wikipedia para los libros). Solo procesa lo pendiente y se puede detener
 y reanudar.
 
+«Descargar portadas» busca solo portadas, para lo que no tenga:
+- Anime y manga de MAL: `main_picture` (se vuelve a pedir título a título si falta).
+- Manga del Excel: la portada de la serie en tu lista de MAL o, si no está, la del
+  resultado de buscarla en MAL cuyo título coincida (necesita el Client ID).
+- Películas: póster de TMDB (`/movie/{tmdbId}` para las ya completadas).
+- Libros: `cover_i` de Open Library y, si no hay, la miniatura de Wikipedia
+  (español y luego inglés), con una petición por segundo.
+
+Al terminar, el Registro muestra cuántas portadas faltan por categoría. Si una
+imagen no carga, se ve un recuadro del color de la categoría con las iniciales.
+
 ## Fase 2 (pendiente): recomendador
 En `fase2-pendiente/` está el código ya escrito: embeddings locales, perfil de
 gustos y ranking. Falta la capa con LLM (Gemini con clave gratuita, más un botón

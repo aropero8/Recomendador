@@ -77,7 +77,7 @@ export async function importLetterboxd(file: File, log: Log) {
 const poster = (path?: string | null) => (path ? `https://image.tmdb.org/t/p/w342${path}` : undefined);
 
 /** Películas ya completadas antes de guardar pósters: solo se pide /movie/{tmdbId}, sin volver a buscarlas. */
-async function completarPosters(tmdbKey: string, todo: Item[], log: Log, stop: Stopper) {
+export async function completarPosters(tmdbKey: string, todo: Item[], log: Log, stop: Stopper) {
   log(`películas: buscando el póster de ${todo.length} ya completadas`);
   let found = 0;
   for (const [n, it] of todo.entries()) {
