@@ -5,27 +5,32 @@ import { useUserCovers } from "./covers/user";
 import { db, isQuotaError, limpiarBaseDeDatos, quotaMessage, StorageInfo, storageInfo, Stopper } from "./db";
 import { completarLibros } from "./ingest/books";
 import { portadasLibros } from "./ingest/covers";
-import { actualizarAnimeManga, actualizarPeliculas, actualizarTodo } from "./ingest/update";
+import { actualizarAnimeManga, actualizarLibros, actualizarPeliculas } from "./ingest/update";
 import { addBook, BookInput, deleteBook, markAsRead, updateBook } from "./libros";
 import { fusionarManga } from "./merge";
 import { useNav, View } from "./nav";
 import { loadSettings, saveSettings, Settings } from "./settings";
-import { loadSyncTimes, SyncTimes, timeAgo } from "./sync";
+import { loadSyncTimes, MissingSettings, SyncResult, SyncSource, SyncTimes, timeAgo } from "./sync";
 import { Item, ITEM_TYPES, ItemType, Log, TYPE_LABEL } from "./types";
 import BookForm from "./ui/BookForm";
 import Category from "./ui/Category";
 import Data, { Counts } from "./ui/Data";
 import Detail from "./ui/Detail";
 import Home from "./ui/Home";
-import { IconBack, IconData, IconRefresh, IconSettings } from "./ui/icons";
+import { IconBack, IconData, IconSettings } from "./ui/icons";
 import SettingsTab from "./ui/SettingsTab";
 
 const TITLE: Partial<Record<View["v"], string>> = { data: "Datos", settings: "Ajustes" };
 
-/** Categorías que se actualizan desde su fuente (los libros se apuntan a mano). */
-const UPDATABLE: Partial<Record<ItemType, "mal" | "letterboxd">> = { anime: "mal", manga: "mal", movie: "letterboxd" };
+type SyncFn = (s: Settings, log: Log, stop: Stopper) => Promise<SyncResult>;
 
-type SyncFn = (s: Settings, log: Log, stop: Stopper) => Promise<string>;
+/** «Actualizar» de cada categoría: anime y manga comparten la lista de MAL (y la fecha); libros busca sinopsis y portadas. */
+const UPDATE: Record<ItemType, { source: SyncSource; description: string; fn: SyncFn }> = {
+  anime: { source: "mal", description: "Actualiza anime y manga desde MyAnimeList", fn: actualizarAnimeManga },
+  manga: { source: "mal", description: "Actualiza anime y manga desde MyAnimeList", fn: actualizarAnimeManga },
+  movie: { source: "letterboxd", description: "Desde el RSS de Letterboxd", fn: actualizarPeliculas },
+  book: { source: "books", description: "Busca las sinopsis y portadas que falten", fn: actualizarLibros },
+};
 
 export default function App() {
   const { view, go, back } = useNav();
@@ -37,7 +42,8 @@ export default function App() {
   const stopper = useRef<Stopper>({ stopped: false });
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [syncTimes, setSyncTimes] = useState<SyncTimes>({});
-  const [banner, setBanner] = useState<{ text: string; done: boolean } | null>(null); // progreso y resumen de una actualización
+  // progreso y resumen de una actualización; goSettings: falta algo en Ajustes
+  const [banner, setBanner] = useState<{ text: string; done: boolean; goSettings?: boolean } | null>(null);
   const main = useRef<HTMLElement>(null);
   const prev = useRef<View>(view);
 
@@ -128,11 +134,15 @@ export default function App() {
       setBanner({ text: "Actualizando…", done: false });
       try {
         const res = await fn(settings!, log, stop);
-        setBanner({ text: stop.stopped ? `Detenido. ${res}` : res, done: true });
+        setSyncTimes(await loadSyncTimes()); // la fecha cambia a la vez que aparece el resumen
+        const text = stop.stopped ? `Detenido. ${res.text}` : res.text;
+        addLog(text);
+        setBanner({ text, done: true, goSettings: res.goSettings });
       } catch (e: any) {
-        const msg = isQuotaError(e) ? await quotaMessage() : `Error: ${e?.message ?? e}`;
+        const ajustes = e instanceof MissingSettings;
+        const msg = isQuotaError(e) ? await quotaMessage() : ajustes ? e.message : `Error: ${e?.message ?? e}`;
         addLog(msg);
-        setBanner({ text: msg, done: true });
+        setBanner({ text: msg, done: true, goSettings: ajustes });
       }
     }, true);
 
@@ -151,7 +161,7 @@ export default function App() {
       await completarLibros(log, stop, only);
       await portadasLibros(log, stop, only);
       const it = await db.items.get(newKey);
-      return `«${b.title}» añadido${it ? `: ${it.synopsis ? "con sinopsis" : "sin sinopsis"}, ${it.cover ? "con portada" : "sin portada"}` : ""}`;
+      return { text: `«${b.title}» añadido${it ? `: ${it.synopsis ? "con sinopsis" : "sin sinopsis"}, ${it.cover ? "con portada" : "sin portada"}` : ""}` };
     });
   };
 
@@ -159,8 +169,8 @@ export default function App() {
 
   const catType = view.v === "cat" || view.v === "item" || view.v === "book" ? view.type : null;
   const title = catType ? TYPE_LABEL[catType] : TITLE[view.v];
-  const source = catType ? UPDATABLE[catType] : undefined;
-  const updateCategory = () => sync(source === "letterboxd" ? actualizarPeliculas : actualizarAnimeManga);
+  const upd = catType ? UPDATE[catType] : undefined;
+  const lastSync = upd && syncTimes[upd.source];
 
   return (
     <div className="app">
@@ -178,11 +188,6 @@ export default function App() {
           </>
         )}
         <div className="actions">
-          {view.v === "cat" && source && (
-            <button className="icon" onClick={updateCategory} disabled={busy} aria-label="Actualizar" title={`Actualizar ${title}`}>
-              <IconRefresh />
-            </button>
-          )}
           <button className={`icon ${view.v === "data" ? "on" : ""}`} onClick={() => view.v !== "data" && go({ v: "data" })} aria-label="Datos" title="Datos">
             <IconData />
           </button>
@@ -205,6 +210,17 @@ export default function App() {
               Detener
             </button>
           )}
+          {banner.done && banner.goSettings && (
+            <button
+              className="link"
+              onClick={() => {
+                setBanner(null);
+                go({ v: "settings" });
+              }}
+            >
+              Ir a Ajustes
+            </button>
+          )}
           {banner.done && (
             <button className="link" onClick={() => setBanner(null)} aria-label="Cerrar aviso">
               ✕
@@ -219,9 +235,6 @@ export default function App() {
             items={shown}
             openCategory={(type) => go({ v: "cat", type })}
             openData={() => go({ v: "data" })}
-            syncTimes={syncTimes}
-            busy={busy}
-            onUpdateAll={() => sync(actualizarTodo)}
           />
         )}
         {catType && (
@@ -229,7 +242,12 @@ export default function App() {
             items={shown ?? []}
             type={catType}
             onOpen={(key) => go({ v: "item", type: catType, key })}
-            updated={source ? (syncTimes[source] ? `Actualizado ${timeAgo(syncTimes[source])}` : "Sin actualizar") : undefined}
+            update={{
+              description: upd!.description,
+              updated: lastSync ? `Actualizado ${timeAgo(lastSync)}` : "Sin actualizar todavía",
+              busy,
+              onClick: () => sync(upd!.fn),
+            }}
             onAdd={catType === "book" ? () => go({ v: "book", type: "book" }) : undefined}
           />
         )}

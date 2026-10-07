@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { norm } from "../lib/text";
 import { Item, ItemType, Status } from "../types";
 import Cover from "./Cover";
+import { IconRefresh } from "./icons";
 
 const STATUS_FILTERS: [Status | "all", string][] = [
   ["all", "Todo"],
@@ -26,11 +27,16 @@ interface Props {
   items: Item[];
   type: ItemType;
   onOpen: (key: string) => void;
-  updated?: string; // «Actualizado hace 2 días» (anime, manga y películas)
+  update: {
+    description: string; // «Actualiza anime y manga desde MyAnimeList»
+    updated: string; // «Actualizado hace 2 días»
+    busy: boolean;
+    onClick: () => void;
+  };
   onAdd?: () => void; // libros: «Añadir libro»
 }
 
-export default function Category({ items, type, onOpen, updated, onAdd }: Props) {
+export default function Category({ items, type, onOpen, update, onAdd }: Props) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<Status | "all">("all");
   const [sort, setSort] = useState<Sort>("score");
@@ -63,18 +69,30 @@ export default function Category({ items, type, onOpen, updated, onAdd }: Props)
     return () => io.disconnect();
   }, [shown.length, limit]);
 
+  const search = <input type="search" placeholder="Buscar por título" value={query} onChange={(e) => setQuery(e.target.value)} />;
   const rated = shown.filter((i) => i.userScore != null);
   const avg = rated.length ? rated.reduce((a, i) => a + i.userScore!, 0) / rated.length : null;
 
   return (
     <div className="stack">
       <div className="filters">
-        {onAdd && (
-          <button className="add-book" onClick={onAdd}>
-            + Añadir libro
+        {/* Libros: «Añadir libro» y «Actualizar» juntos y el buscador debajo; el resto: buscador y «Actualizar» */}
+        <div className="cat-tools">
+          {onAdd ? (
+            <button className="add-book" onClick={onAdd}>
+              + Añadir libro
+            </button>
+          ) : (
+            search
+          )}
+          <button className={`update ${type}`} disabled={update.busy} onClick={update.onClick}>
+            <IconRefresh /> Actualizar
           </button>
-        )}
-        <input type="search" placeholder="Buscar por título" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        <p className="hint update-hint">
+          {update.description} · {update.updated}
+        </p>
+        {onAdd && search}
         <div className="chips" role="group" aria-label="Estado">
           {STATUS_FILTERS.map(([s, label]) => (
             <button key={s} className={`chip ${status === s ? `on ${type}` : ""}`} onClick={() => setStatus(s)}>
@@ -92,7 +110,6 @@ export default function Category({ items, type, onOpen, updated, onAdd }: Props)
         <p className="hint">
           {shown.length} {shown.length === 1 ? "título" : "títulos"}
           {avg != null && ` · nota media ${avg.toFixed(1)} (${rated.length} con nota)`}
-          {updated && ` · ${updated}`}
         </p>
       </div>
 
