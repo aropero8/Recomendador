@@ -1,4 +1,4 @@
-import { apiGet, cleanTitle, firstAuthor, OL, olCover, titleMatch, wikiThumb } from "../ingest/books";
+import { apiGet, cleanTitle, englishTitle, firstAuthor, OL, olBestCover, olCover, olSearch, titleMatch, wikiThumb } from "../ingest/books";
 import { malGet, malPicture } from "../ingest/mal";
 import { getJson, HttpError, qs } from "../lib/http";
 import type { Settings } from "../settings";
@@ -84,15 +84,29 @@ async function libros(it: Item): Promise<Candidate[]> {
     const t = await wikiThumb(it.extra.synopsisUrl).catch(() => undefined);
     if (t) out.push({ url: t, label: "Wikipedia" });
   }
-  let docs: any[] = [];
-  for (const p of author ? [{ title, author }, { title }] : [{ title }]) {
-    const js = await apiGet(`${OL}/search.json?${qs({ ...p, limit: 10, fields: "key,title,author_name,cover_i" })}`);
-    docs = (js?.docs ?? []).filter((d: any) => titleMatch(title, d.title) > 0);
-    if (docs.length) break;
+  // La misma comparación que «Descargar portadas» (título de la obra o de la edición); si no sale
+  // ninguna portada, también con el título en inglés de Wikipedia y con la búsqueda general
+  let docs = await olSearch(title, author, "campos");
+  const esUrl: string | undefined = it.extra.synopsisUrl;
+  if (!olBestCover(docs) && esUrl?.startsWith("https://es.wikipedia.org/")) {
+    const en = await englishTitle(esUrl).catch(() => undefined);
+    if (en && titleMatch(en, title) !== 2) docs = [...docs, ...(await olSearch(en, author, "campos"))];
   }
+  if (!olBestCover(docs)) docs = [...docs, ...(await olSearch(title, author, "general"))];
+  const byWho = (d: any) => (d.author_name?.length ? `, ${d.author_name[0]}` : "");
+  // Primero las ediciones en español que han coincidido con la búsqueda, después cada obra y sus otras ediciones
+  for (const d of docs)
+    for (const e of d.editions?.docs ?? []) {
+      const url = (e.language ?? []).includes("spa") ? olCover(e.cover_i) : undefined;
+      if (url) out.push({ url, label: `Edición en español: ${e.title}${byWho(d)}` });
+    }
   for (const d of docs) {
     const url = olCover(d.cover_i);
-    if (url) out.push({ url, label: `${d.title}${d.author_name?.length ? `, ${d.author_name[0]}` : ""}` });
+    if (url) out.push({ url, label: `${d.title}${byWho(d)}` });
+    for (const e of d.editions?.docs ?? []) {
+      const eu = olCover(e.cover_i);
+      if (eu) out.push({ url: eu, label: `Edición: ${e.title}${byWho(d)}` });
+    }
   }
   // Ediciones de la obra más parecida: suele haber portadas de ediciones en español
   const work = docs[0]?.key;

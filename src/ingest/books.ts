@@ -77,7 +77,9 @@ function readSheets(buf: ArrayBuffer, only?: string[]): Row[] {
 // ---------- sinopsis: Wikipedia ES -> Open Library -> Wikipedia EN ----------
 
 export const OL = "https://openlibrary.org";
-const OL_FIELDS = "key,title,author_name,subject,first_sentence,language,cover_i";
+// editions: la edición que coincide con la búsqueda (su título y su idioma), además de la obra
+const OL_FIELDS =
+  "key,title,author_name,subject,first_sentence,language,cover_i,editions,editions.title,editions.cover_i,editions.language";
 // default=false: si la portada no existe da error (y se ve el recuadro con iniciales) en vez de una imagen en blanco
 export const olCover = (id?: number) => (id ? `https://covers.openlibrary.org/b/id/${id}-M.jpg?default=false` : undefined);
 const GAP = 1000; // como mucho una petición por segundo, sumando todas las fuentes
@@ -133,42 +135,95 @@ function editDistance(a: string, b: string) {
   return prev[b.length];
 }
 
-/** Autor parecido aunque esté mal escrito (Kaztenbach ~ Katzenbach): alguna palabra a ≤ 2 letras. */
+/**
+ * Autor parecido aunque esté mal escrito (Kaztenbach ~ Katzenbach): alguna palabra a ≤ 2 letras.
+ * Solo cuentan nombres de personas (≤ 4 palabras): «Conferencia "Lev Tolstoĭ i mirovaja literatura"»
+ * no es Tolstói.
+ */
 function authorMatch(excel: string, names: string[] = []) {
   const toks = (s: string) => words(s).trim().split(" ").filter((w) => w.length >= 4);
   const mine = toks(excel);
-  return names.some((n) => toks(n).some((t) => mine.some((m) => editDistance(m, t) <= 2)));
+  const people = names.filter((n) => words(n).trim().split(" ").length <= 4);
+  return people.some((n) => toks(n).some((t) => mine.some((m) => editDistance(m, t) <= 2)));
 }
 
-/** Con wantDesc = false solo busca (portada y temas), sin pedir la descripción de la obra. */
-async function openLibrary(title: string, author: string, wantDesc = true) {
-  // Primero título + autor; si nada encaja, solo título (los autores del Excel pueden estar mal escritos)
-  for (const p of author ? [{ title, author }, { title }] : [{ title }]) {
-    const js = await apiGet(`${OL}/search.json?${qs({ ...p, limit: 5, fields: OL_FIELDS })}`);
-    // De los 5 resultados, los que coinciden exactamente antes que los que solo contienen el título.
-    // Buscando solo por título, el autor tiene que parecerse para no coger otro libro con el mismo nombre.
-    const ok: any[] = (js?.docs ?? [])
-      .filter((d: any) => !author || p.author || authorMatch(author, d.author_name))
-      .map((d: any) => ({ d, m: titleMatch(title, d.title) }))
-      .filter((x: any) => x.m > 0)
-      .sort((a: any, b: any) => b.m - a.m)
-      .map((x: any) => x.d);
-    if (!ok.length) continue;
+/**
+ * Resultados de Open Library que corresponden al libro, mejores primero. Open Library devuelve el
+ * título de la obra (a menudo en inglés u original: «Anna Karenina», «Wuthering Heights») y, en
+ * editions, la edición que coincide con la búsqueda («Ana Karenina», «Cumbres borrascosas»):
+ * vale si coincide cualquiera de los dos. Si no coincide ninguno pero es el primer resultado y el
+ * autor se parece, también vale. Buscando solo por título, el autor tiene que parecerse para no
+ * coger otro libro con el mismo nombre.
+ */
+function olMatches(docs: any[], title: string, author: string, titleOnly: boolean) {
+  return docs
+    .map((d, i) => {
+      const eds: any[] = d.editions?.docs ?? [];
+      const m = Math.max(titleMatch(title, d.title), ...eds.map((e) => titleMatch(title, e.title)));
+      const sameAuthor = !!author && authorMatch(author, d.author_name);
+      if (titleOnly && author && !sameAuthor) return null;
+      const score = m > 0 ? m : i === 0 && sameAuthor ? 0.5 : 0;
+      return score > 0 ? { d, score } : null;
+    })
+    .filter((x): x is { d: any; score: number } => !!x)
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.d);
+}
 
-    let desc = "";
-    if (wantDesc) {
-      const w = await apiGet(`${OL}${ok[0].key}.json`);
-      desc = w?.description ?? "";
-      if (typeof desc === "object") desc = (desc as any).value ?? "";
-    }
-    // Open Library suele repetir el mismo libro en varias obras: primera frase, temas y portada de cualquiera de ellas.
-    // La primera frase es una cita del libro, no un resumen: solo se usa si no hay nada mejor.
-    const firstSentence = String(ok.find((d) => d.first_sentence?.length)?.first_sentence[0] ?? "").trim();
-    const subjects = [...new Set(ok.flatMap((d) => (d.subject ?? []) as string[]))].slice(0, 10);
-    const cover = olCover(ok.find((d) => d.cover_i)?.cover_i);
-    return { desc: String(desc).trim(), firstSentence, subjects, cover };
+/** Portada de los resultados: mejor la de una edición en español; si no, la de la obra. */
+export function olBestCover(docs: any[]) {
+  const eds: any[] = docs.flatMap((d) => d.editions?.docs ?? []);
+  const spa = eds.find((e) => e.cover_i && (e.language ?? []).includes("spa"));
+  return olCover(spa?.cover_i ?? docs.find((d) => d.cover_i)?.cover_i ?? eds.find((e) => e.cover_i)?.cover_i);
+}
+
+/**
+ * Busca un libro en Open Library.
+ * - "campos": title + author y, si nada encaja, solo title (los autores del Excel pueden estar mal escritos).
+ * - "general": q=<título> <apellido>, el último recurso (encuentra obras con el título en otro idioma
+ *   cuya edición en español coincide).
+ * Con needCover sigue probando mientras lo encontrado no tenga portada.
+ */
+export async function olSearch(title: string, author: string, mode: "campos" | "general", needCover = false): Promise<any[]> {
+  const surname = words(author).trim().split(" ").pop() ?? "";
+  const queries: Record<string, string>[] =
+    mode === "general" ? [{ q: `${title} ${surname}`.trim() }] : author ? [{ title, author }, { title }] : [{ title }];
+  let found: any[] = [];
+  for (const p of queries) {
+    const js = await apiGet(`${OL}/search.json?${qs({ ...p, limit: 5, fields: OL_FIELDS })}`);
+    const hits = olMatches(js?.docs ?? [], title, author, !!p.title && !p.author);
+    if (hits.length && (!needCover || olBestCover(hits))) return hits;
+    if (!found.length) found = hits;
   }
-  return null;
+  return needCover ? [] : found;
+}
+
+/** Título en inglés de un artículo de Wikipedia en español (enlaces entre idiomas), sin la coletilla «(novel)». */
+export async function englishTitle(esUrl: string) {
+  const m = /^https:\/\/es\.wikipedia\.org\/wiki\/(.+)$/.exec(esUrl);
+  if (!m) return undefined;
+  const page = decodeURIComponent(m[1]).replace(/_/g, " ");
+  const js = await apiGet(
+    `https://es.wikipedia.org/w/api.php?${qs({ action: "query", prop: "langlinks", lllang: "en", titles: page, format: "json", formatversion: 2, origin: "*" })}`,
+  );
+  const en: string | undefined = js?.query?.pages?.[0]?.langlinks?.[0]?.title;
+  return en?.replace(/\s*\([^)]*\)\s*$/, "").trim() || undefined;
+}
+
+/** Sinopsis (descripción de la obra), primera frase, temas y portada de Open Library. */
+async function openLibrary(title: string, author: string) {
+  let ok = await olSearch(title, author, "campos");
+  if (!ok.length) ok = await olSearch(title, author, "general");
+  if (!ok.length) return null;
+
+  const w = await apiGet(`${OL}${ok[0].key}.json`);
+  let desc = w?.description ?? "";
+  if (typeof desc === "object") desc = desc.value ?? "";
+  // Open Library suele repetir el mismo libro en varias obras: primera frase, temas y portada de cualquiera de ellas.
+  // La primera frase es una cita del libro, no un resumen: solo se usa si no hay nada mejor.
+  const firstSentence = String(ok.find((d) => d.first_sentence?.length)?.first_sentence[0] ?? "").trim();
+  const subjects = [...new Set(ok.flatMap((d) => (d.subject ?? []) as string[]))].slice(0, 10);
+  return { desc: String(desc).trim(), firstSentence, subjects, cover: olBestCover(ok) };
 }
 
 /** El texto menciona al autor (su apellido, aunque esté mal escrito en el Excel). */
@@ -247,15 +302,23 @@ export function malSeries(it: Item, malManga: Item[]) {
 }
 
 /**
- * Portada de un libro: cover_i de Open Library y, si no hay, la miniatura de Wikipedia (la del
- * artículo de la sinopsis o buscando en español y después en inglés). Una petición por segundo.
+ * Portada de un libro, una petición por segundo:
+ * 1. Open Library por título y autor (vale el título de la obra o el de la edición), mejor una edición en español.
+ * 2. Si tiene artículo en la Wikipedia en español, lo mismo con su título en inglés.
+ * 3. Búsqueda general en Open Library (título y apellido).
+ * 4. La miniatura de Wikipedia (la del artículo de la sinopsis o buscando en español y en inglés).
  */
 export async function buscarPortadaLibro(it: Item): Promise<string | undefined> {
   const title = cleanTitle(it.title);
   const author = firstAuthor(it);
-  const ol = await openLibrary(title, author, false);
-  if (ol?.cover) return ol.cover;
   const url: string | undefined = it.extra.synopsisUrl;
+  let cover = olBestCover(await olSearch(title, author, "campos", true));
+  if (!cover && url?.startsWith("https://es.wikipedia.org/")) {
+    const en = await englishTitle(url);
+    if (en && titleMatch(en, title) !== 2) cover = olBestCover(await olSearch(en, author, "campos", true));
+  }
+  if (!cover) cover = olBestCover(await olSearch(title, author, "general", true));
+  if (cover) return cover;
   const urlLang = /^https:\/\/(\w+)\.wikipedia\.org\//.exec(url ?? "")?.[1];
   if (urlLang) {
     const t = await wikiThumb(url!);
@@ -270,6 +333,7 @@ export async function buscarPortadaLibro(it: Item): Promise<string | undefined> 
 }
 
 const LOOKUP_V = 2; // versión de la búsqueda: lo marcado con una versión anterior se vuelve a intentar
+const OL_V = 2; // versión de la comparación con Open Library (2: también el título de la edición y búsqueda general)
 
 /**
  * Busca la sinopsis de los libros del Excel que no la tienen: Wikipedia en español, Open Library y
@@ -285,7 +349,10 @@ export async function completarLibros(log: Log, stop: Stopper) {
   const inMal = books.filter((i) => malSeries(i, malManga)).length;
   if (inMal) log(`libros: ${inMal} series de manga ya están en MAL; no se buscan`);
 
-  const todo = books.filter((i) => !i.synopsis && i.extra.lookupV !== LOOKUP_V && !malSeries(i, malManga));
+  // Sin sinopsis y sin buscar con esta versión; los que ya pasaron por Wikipedia solo vuelven a Open Library
+  const todo = books.filter(
+    (i) => !i.synopsis && !malSeries(i, malManga) && (i.extra.lookupV !== LOOKUP_V || i.extra.olChecked !== OL_V),
+  );
   if (!todo.length) log("libros: no queda ninguna sinopsis por buscar");
   else log(`libros: buscando la sinopsis de ${todo.length} títulos (1 petición por segundo)`);
 
@@ -309,21 +376,24 @@ export async function completarLibros(log: Log, stop: Stopper) {
         if (!cover && c) [cover, covers] = [c, covers + 1];
       };
 
-      const es = await wikipedia("es", title, author);
-      if (es) {
-        [desc, source, url] = [es.desc, "wikipedia-es", es.url];
-        keepCover(es.thumb);
+      const wikiDone = it.extra.lookupV === LOOKUP_V; // Wikipedia ya se consultó y no ha cambiado
+      if (!wikiDone) {
+        const es = await wikipedia("es", title, author);
+        if (es) {
+          [desc, source, url] = [es.desc, "wikipedia-es", es.url];
+          keepCover(es.thumb);
+        }
       }
-      // Open Library: si ya se consultó con este mismo título no se repite
-      if (!desc && !(extra.olChecked && title === it.title)) {
+      // Open Library: si ya se consultó con esta versión de la comparación no se repite
+      if (!desc && extra.olChecked !== OL_V) {
         const ol = await openLibrary(title, author);
-        extra.olChecked = true;
+        extra.olChecked = OL_V;
         if (ol?.subjects.length) subjects = ol.subjects;
         if (ol?.desc) [desc, source] = [ol.desc, "openlibrary"];
         firstSentence = ol?.firstSentence ?? "";
         keepCover(ol?.cover);
       }
-      if (!desc) {
+      if (!desc && !wikiDone) {
         const en = await wikipedia("en", title, author);
         if (en) {
           [desc, source, url] = [en.desc, "wikipedia-en", en.url];

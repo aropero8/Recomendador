@@ -8,8 +8,10 @@ import { buscarPortadaLibro, cleanTitle, malSeries, titleMatch } from "./books";
 import { completarPeliculas, completarPosters } from "./letterboxd";
 import { importMal, malGet, malPicture } from "./mal";
 
-// Versión de la búsqueda de portadas del Excel: lo marcado con otra versión se vuelve a intentar
-const COVER_V = 2;
+// Versiones de las búsquedas de portadas del Excel: lo marcado con otra versión se vuelve a intentar.
+// COVER_V 3: Open Library también compara el título de la edición, usa el título en inglés y la búsqueda general.
+const COVER_V = 3;
+const MAL_SEARCH_V = 2; // búsqueda de los mangas del Excel en MAL
 
 /**
  * Ejecuta un paso; si falla (clave mal puesta, sin conexión...) lo apunta y deja seguir con el siguiente.
@@ -82,7 +84,7 @@ export async function portadasMangaExcel(s: Settings, log: Log, stop: Stopper) {
   const copied = copies.length;
   if (copied) log(`manga: ${copied} portadas copiadas de tu lista de MAL`);
 
-  const todo = mangas.filter((i) => !malSeries(i, malManga) && i.extra.malSearchV !== COVER_V);
+  const todo = mangas.filter((i) => !malSeries(i, malManga) && i.extra.malSearchV !== MAL_SEARCH_V);
   if (!todo.length) return;
   if (!s.malClientId) return log(`manga: ${todo.length} series sin portada. Pon el Client ID de MAL en Ajustes para buscarlas.`);
   log(`manga: buscando ${todo.length} series en MAL`);
@@ -94,7 +96,7 @@ export async function portadasMangaExcel(s: Settings, log: Log, stop: Stopper) {
       const best = await buscarMangaEnMal(it.title, s.malClientId);
       const cover = malPicture(best);
       if (cover) found++;
-      await out.put({ ...it, cover, extra: { ...it.extra, malSearchV: COVER_V, malId: best?.id ?? it.extra.malId } });
+      await out.put({ ...it, cover, extra: { ...it.extra, malSearchV: MAL_SEARCH_V, malId: best?.id ?? it.extra.malId } });
       if ((n + 1) % 10 === 0 || n + 1 === todo.length) log(`manga: ${n + 1}/${todo.length} (${found} portadas)`);
     }
   } finally {
@@ -148,6 +150,9 @@ export async function portadasLibros(log: Log, stop: Stopper) {
   } finally {
     await out.flush();
   }
+  // Como en la app: los mangas del Excel que se muestran fusionados con MAL no cuentan
+  const sin = fusionarManga(await db.items.toArray()).filter((i) => i.source === "excel" && !i.cover && !custom.has(i.key));
+  log(sin.length ? `libros sin portada (${sin.length}): ${sin.map((i) => i.title).join(" · ")}` : "libros: todos tienen portada");
 }
 
 /** Cuántas portadas faltan por categoría. */
