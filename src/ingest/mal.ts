@@ -22,7 +22,7 @@ async function fetchList(kind: "anime" | "manga", user: string, clientId: string
   const out: any[] = [];
   let url: string | null =
     `${BASE}/v2/users/${encodeURIComponent(user)}/${kind}list?` +
-    qs({ fields: "list_status,synopsis,genres,alternative_titles,title", limit: 1000, nsfw: "true" });
+    qs({ fields: "list_status,synopsis,genres,alternative_titles,title,main_picture", limit: 1000, nsfw: "true" });
   for (let page = 1; url; page++) {
     let js: any;
     try {
@@ -59,7 +59,13 @@ export async function importMal(user: string, clientId: string, log: Log) {
         genres: (m.genres ?? []).map((g: any) => g.name),
         userScore: ls?.score ? Number(ls.score) : null, // 0 = sin nota
         status: STATUS[ls?.status] ?? "other",
-        extra: { malId: m.id, altTitles: [...new Set([m.title, alt.en, alt.ja, ...(alt.synonyms ?? [])].filter(Boolean))] },
+        extra: {
+          malId: m.id,
+          altTitles: [...new Set([m.title, alt.en, alt.ja, ...(alt.synonyms ?? [])].filter(Boolean))],
+          date: ls?.finish_date ?? ls?.updated_at,
+          coverChecked: true, // ya se pidió main_picture: si no hay portada, MAL no la tiene
+        },
+        cover: m.main_picture?.medium ?? m.main_picture?.large,
       };
     });
     await bulkUpsert(items);

@@ -11,9 +11,18 @@ export interface Item {
   genres: string[];
   userScore: number | null; // escala 0-10
   status: Status;
-  extra: Record<string, any>;
+  extra: Record<string, any>; // extra.date (ISO) se usa para ordenar por «Recientes»
+  cover?: string; // URL de la portada o póster
   embedding?: Float32Array;
 }
+
+export const STATUS_LABEL: Record<Status, string> = {
+  read: "Terminado",
+  reading: "En curso",
+  plan: "Pendiente",
+  dropped: "Abandonado",
+  other: "En pausa",
+};
 
 export const TYPE_LABEL: Record<ItemType, string> = {
   anime: "Anime",
