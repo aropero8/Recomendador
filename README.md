@@ -92,6 +92,17 @@ recomendaciones cruzadas.
    contexto). Las últimas recomendaciones de cada categoría se guardan para
    verlas sin gastar peticiones.
 
+En libros (con «Algo nuevo» o «Ambos») hay una opción experimental, **Pistas de
+«An Ocean of Books»** (`src/reco/ocean.ts`). [An Ocean of Books](https://artsexperiments.withgoogle.com/ocean-of-books)
+es un mapa de Google Arts & Culture que coloca los libros de Google Books según lo
+parecido de su texto, con una isla por autor. La app busca en él tus 8 libros
+favoritos (o la isla de su autor), coge los libros de otros autores que tienen más
+cerca y se los pasa a Gemini como candidatos. Gemini elige los que encajan y las
+tarjetas que salen de ahí llevan la etiqueta «Del mapa». El mapa no siempre acierta:
+fuera de los clásicos, la cercanía indica poco, y solo están los ~1.000 autores y
+~4.000 libros más conocidos, casi todos con su título en inglés. Si falla o no
+encuentra nada, se recomienda como siempre.
+
 Si llegas al límite gratuito de Gemini, **Copiar mi perfil** copia el perfil con
 unas instrucciones para pegarlo en cualquier chat de IA.
 
@@ -148,6 +159,9 @@ Tus listas, notas y claves se guardan solo en el dispositivo. Salen de él:
   servicios. Con el **nivel gratuito**, Google puede usar ese contenido para
   mejorar sus productos (condiciones de la API de Gemini); si no quieres, no uses
   «Recomiéndame» o usa «Copiar mi perfil» en el chat que prefieras.
+- Con las pistas de «An Ocean of Books», la app descarga de Google Cloud Storage
+  los índices del mapa y las zonas cercanas a tus libros favoritos. No se envía
+  ningún título, solo qué zonas del mapa se piden.
 
 El repositorio no incluye datos personales: `.gitignore` excluye Excel, ZIP, CSV
 y `.env`, y las claves (también la de Gemini) solo están en los Ajustes del
@@ -163,6 +177,8 @@ dispositivo, nunca en el código ni en las copias de seguridad.
   la app guarda el enlace al artículo de origen de cada resumen.
 - Recomendaciones generadas con [Gemini](https://ai.google.dev) (Google) y comprobadas
   en MyAnimeList, TMDB y Open Library.
+- Pistas de libros: [An Ocean of Books](https://artsexperiments.withgoogle.com/ocean-of-books)
+  (Google Arts & Culture). Sus datos se consultan en directo y no se copian en este repositorio.
 
 ## Licencia
 Copyright (C) 2026 aropero8

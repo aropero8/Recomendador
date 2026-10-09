@@ -1,6 +1,7 @@
 import type { Settings } from "../settings";
 import { MissingSettings } from "../sync";
 import { isBookSource, ITEM_TYPES, type Item, type ItemType } from "../types";
+import type { Neighbor } from "./ocean";
 import { label, profileText } from "./profile";
 
 // Recomendaciones con Gemini (API de Google AI Studio, nivel gratuito). Se envían tu perfil, tus
@@ -17,6 +18,7 @@ export interface RecoRequest {
   source: RecoSource; // de mis pendientes, algo nuevo o ambos
   wish: string; // lo que me apetece (opcional)
   allTastes: boolean; // basado en todos mis gustos (recomendaciones cruzadas)
+  ocean?: boolean; // libros: candidatos de «An Ocean of Books» (experimental)
 }
 
 /** Lo que devuelve Gemini (antes de verificar). */
@@ -65,8 +67,21 @@ const SYSTEM =
   "con su título y año correctos, que encajen con los gustos del usuario. No recomiendas nada de lo que ya ha " +
   "visto o leído ni lo que ha descartado. Respondes solo con el JSON pedido; los textos, en español.";
 
-/** El prompt: perfil, pendientes, lo ya visto o leído (solo títulos), lo descartado y lo que te apetece. */
-export function buildPrompt(items: Item[], req: RecoRequest, feedback: Feedback[]) {
+/** Los libros cercanos a tus favoritos en el mapa, agrupados por favorito. */
+function mapText(cands: Neighbor[]) {
+  const byAnchor = new Map<string, Neighbor[]>();
+  for (const c of cands) byAnchor.set(c.near, [...(byAnchor.get(c.near) ?? []), c]);
+  return [
+    `## CANDIDATOS DEL MAPA (${cands.length})`,
+    "Libros de otros autores que están cerca de mis favoritos en «An Ocean of Books», un mapa de Google que coloca " +
+      "los libros según lo parecido de su texto. El mapa no siempre acierta: recomienda solo los que encajen de verdad " +
+      "con mi perfil (con su título en España si existe) y, si ninguno encaja, ignóralos.",
+    ...[...byAnchor].map(([near, cs]) => `- Cerca de ${near}: ${cs.map((c) => (c.author ? `${c.title} (${c.author})` : c.title)).join(" · ")}`),
+  ].join("\n");
+}
+
+/** El prompt: perfil, pendientes, lo ya visto o leído (solo títulos), lo descartado, lo que te apetece y, en libros, los candidatos del mapa. */
+export function buildPrompt(items: Item[], req: RecoRequest, feedback: Feedback[], mapCands: Neighbor[] = []) {
   const { type } = req;
   const mine = items.filter((i) => i.type === type);
   const pending = mine.filter((i) => i.status === "plan");
@@ -102,6 +117,7 @@ export function buildPrompt(items: Item[], req: RecoRequest, feedback: Feedback[
     `## ${SEEN[type]}: no los recomiendes (${seen.length})`,
     seen.length ? seen.join(" · ") : "(ninguno)",
     dismissed.length ? `\n## NO ME INTERESAN: no los recomiendes\n${dismissed.join(" · ")}` : null,
+    mapCands.length ? `\n${mapText(mapCands)}` : null,
   ]
     .filter((l) => l !== null)
     .join("\n");

@@ -21,6 +21,7 @@ export interface Reco {
   author?: string | null;
   reason: string;
   inPending: boolean; // está en tus pendientes
+  fromMap?: boolean; // libros: sale de los candidatos de «An Ocean of Books»
   libraryKey?: string; // su ficha en tu biblioteca
   cover?: string;
   url?: string; // MAL, TMDB u Open Library

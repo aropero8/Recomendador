@@ -192,20 +192,39 @@ function parseCsv(text: string) {
   return rows.slice(1).filter((r) => r.length > 1);
 }
 
+interface IndexAuthor {
+  name: string;
+  pos: Pos; // el centro de su isla
+  box: [Pos, Pos]; // el recuadro de su isla (esquinas superior izquierda e inferior derecha)
+}
 interface Index {
-  books: { title: string; id: string; pos: Pos }[];
-  authors: { name: string; pos: Pos }[];
+  books: OceanBook[];
+  authors: IndexAuthor[];
 }
 let index: Promise<Index> | null = null;
 
-/** Los índices de búsqueda del mapa: ~4.000 libros y ~1.000 autores conocidos (unos 250 kB). */
+const inBox = (p: Pos, [a, b]: [Pos, Pos]) => p.x >= a.x && p.x <= b.x && p.y >= a.y && p.y <= b.y;
+const area = ([a, b]: [Pos, Pos]) => (b.x - a.x) * (b.y - a.y);
+
+/**
+ * Los índices de búsqueda del mapa: ~4.000 libros y ~1.000 autores conocidos (unos 250 kB). Los
+ * libros no traen autor: se les pone el de la isla en la que caen (la más pequeña, si hay varias).
+ */
 function loadIndex() {
   index ??= Promise.all([fetchText(`${DATA}/search-db/search-books.csv.gz`), fetchText(`${DATA}/search-db/search-authors.csv.gz`)])
-    .then(([b, a]) => ({
-      books: parseCsv(b).map(([title, id, lng, lat]) => ({ title, id, pos: mercator(+lng, +lat) })),
-      // La isla del autor: el centro de su recuadro
-      authors: parseCsv(a).map(([name, , minX, minY, maxX, maxY]) => ({ name, pos: mercator((+minX + +maxX) / 2, (+minY + +maxY) / 2) })),
-    }))
+    .then(([b, a]) => {
+      const authors = parseCsv(a).map(([name, , minX, minY, maxX, maxY]): IndexAuthor => {
+        const m = 0.02; // margen en grados: algunos libros caen justo en el borde de la isla
+        const box: [Pos, Pos] = [mercator(+minX - m, +maxY + m), mercator(+maxX + m, +minY - m)];
+        return { name, pos: mercator((+minX + +maxX) / 2, (+minY + +maxY) / 2), box };
+      });
+      const books = parseCsv(b).map(([title, id, lng, lat]) => {
+        const pos = mercator(+lng, +lat);
+        const isle = authors.filter((x) => inBox(pos, x.box)).sort((x, y) => area(x.box) - area(y.box))[0];
+        return { title, id, author: isle?.name ?? "", pos };
+      });
+      return { books, authors };
+    })
     .catch((e) => {
       index = null; // para reintentar la próxima vez
       throw e;
@@ -271,17 +290,29 @@ export async function findAnchors(favs: Favorite[]): Promise<Anchor[]> {
     const author = f.author ? authors.find((a) => sameAuthor(a.name, f.author!)) : undefined;
     const book = books.find((b) => words(b.title) === words(f.title));
     // El libro solo vale con su autor (si su isla está lejos, es otro libro con el mismo título)
-    if (book && (!author || dist(book.pos, author.pos) < 0.002)) out.push({ label: f.label, author: author?.name ?? f.author ?? "", pos: book.pos });
-    else if (author) out.push({ label: f.label, author: author.name, pos: author.pos });
+    const a =
+      book && (!author || dist(book.pos, author.pos) < 0.002)
+        ? { label: f.label, author: author?.name ?? f.author ?? "", pos: book.pos }
+        : author && { label: f.label, author: author.name, pos: author.pos };
+    // Dos favoritos del mismo autor sin libro en el índice caen en el mismo sitio: basta uno
+    if (a && !out.some((o) => dist(o.pos, a.pos) < 1e-6)) out.push(a);
   }
   return out;
 }
 
+/** Si una recomendación sale de los candidatos del mapa (mismo autor o mismo título). */
+export const fromMap = (cands: OceanBook[], titles: (string | null | undefined)[], author?: string | null) =>
+  cands.some((c) => (!!author && sameAuthor(c.author, author)) || titles.some((t) => !!t && words(t) === words(c.title)));
+
+/** Para no proponer libros que ya tienes: título normalizado. */
+export const titleKey = words;
+
 /**
- * Los libros de otros autores más cerca de cada ancla. Lee las teselas de alrededor (3×3) y se queda
- * con `perAnchor` libros por ancla, como mucho 2 por autor.
+ * Los libros de otros autores más cerca de cada ancla: los del índice (los más conocidos) y los de las
+ * teselas de alrededor (3×3). Se queda con `perAnchor` libros por ancla, como mucho 2 por autor.
  */
 export async function neighbors(anchors: Anchor[], perAnchor = 6, skip: (b: OceanBook) => boolean = () => false): Promise<Neighbor[]> {
+  const { books } = await loadIndex();
   const n = 2 ** ZOOM;
   const out: Neighbor[] = [];
   const taken = new Set<string>();
@@ -290,8 +321,7 @@ export async function neighbors(anchors: Anchor[], perAnchor = 6, skip: (b: Ocea
     const ty = Math.floor(a.pos.y * n);
     const around: Promise<OceanBook[]>[] = [];
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (ty + dy >= 0 && ty + dy < n) around.push(tileBooks((tx + dx + n) % n, ty + dy));
-    const near = (await Promise.all(around))
-      .flat()
+    const near = [...books, ...(await Promise.all(around)).flat()]
       .filter((b) => !anchors.some((x) => sameAuthor(x.author, b.author)) && !skip(b))
       .map((b) => ({ ...b, near: a.label, dist: dist(a.pos, b.pos) }))
       .sort((x, y) => x.dist - y.dist);
@@ -300,7 +330,7 @@ export async function neighbors(anchors: Anchor[], perAnchor = 6, skip: (b: Ocea
     for (const b of near) {
       if (added >= perAnchor) break;
       const k = words(b.title);
-      const au = words(b.author);
+      const au = words(b.author) || k; // sin autor conocido, cada libro cuenta como uno distinto
       if (taken.has(k) || (perAuthor.get(au) ?? 0) >= 2) continue;
       taken.add(k);
       perAuthor.set(au, (perAuthor.get(au) ?? 0) + 1);
