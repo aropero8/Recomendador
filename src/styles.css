@@ -452,7 +452,7 @@ label.file { font-weight: 500; }
 
 /* ---------- ajustes ---------- */
 .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; background: var(--surface-2); border-radius: 999px; }
-.segmented button { background: transparent; color: var(--muted); padding: 10px 8px; }
+.segmented button { background: transparent; color: var(--muted); padding: 10px 6px; font-size: 0.9rem; white-space: nowrap; }
 .segmented button.on { background: var(--accent); color: var(--on-accent); }
 
 /* ---------- libros: añadir y editar ---------- */
