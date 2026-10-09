@@ -25,6 +25,21 @@ interface Props {
   storage: StorageInfo | null;
 }
 
+/** Barra pequeña con el porcentaje que ya tiene sinopsis o portada. */
+function Meter({ label, n, total }: { label: string; n: number; total: number }) {
+  const pct = total ? Math.round((n / total) * 100) : 0;
+  return (
+    <span className="meter">
+      <span className="meter-text">
+        {label} <b>{pct} %</b>
+      </span>
+      <span className="meter-bar">
+        <span style={{ width: `${pct}%` }} />
+      </span>
+    </span>
+  );
+}
+
 export default function Data({ settings, counts, log, busy, run, addLog, stoppable, onStop, storage }: Props) {
   const [zip, setZip] = useState<File | null>(null);
   const [leidos, setLeidos] = useState<File | null>(null);
@@ -35,139 +50,129 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
     <div className="stack">
       <section>
         <h2>Tu biblioteca</h2>
-        <table>
-          <thead>
-            <tr>
-              <th></th>
-              <th>Total</th>
-              <th>Con nota</th>
-              <th>Sinopsis</th>
-              <th>Portada</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ITEM_TYPES.map((t) => (
-              <tr key={t}>
-                <td>
-                  <span className={`dot ${t}`} /> {TYPE_LABEL[t]}
-                </td>
-                <td>{counts[t]?.total ?? 0}</td>
-                <td>{counts[t]?.rated ?? 0}</td>
-                <td>{counts[t]?.synopsis ?? 0}</td>
-                <td>{counts[t]?.cover ?? 0}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="stats">
+          {ITEM_TYPES.map((t) => {
+            const c = counts[t] ?? { total: 0, rated: 0, synopsis: 0, cover: 0 };
+            return (
+              <div key={t} className={`stat ${t}`}>
+                <span className="stat-name">
+                  <span className="dot" /> {TYPE_LABEL[t]}
+                </span>
+                <strong>{c.total.toLocaleString("es")}</strong>
+                <small>{c.rated.toLocaleString("es")} con nota</small>
+                <Meter label="Sinopsis" n={c.synopsis} total={c.total} />
+                <Meter label="Portada" n={c.cover} total={c.total} />
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <section>
-        <h2>Anime y manga</h2>
+        <h2>Actualizar tus listas</h2>
         <p className="hint">
-          Lee tu lista pública de MyAnimeList{settings.malUser ? ` (${settings.malUser})` : ""} y aplica los cambios: nuevos, notas,
-          estados y progreso; quita lo que ya no esté en la lista. También con el botón de actualizar de Anime o Manga.
+          MyAnimeList{settings.malUser ? ` (${settings.malUser})` : ""}: nuevos, notas, estados y progreso; quita lo que ya no
+          esté en la lista. El RSS de Letterboxd{settings.letterboxdUser ? ` (${settings.letterboxdUser})` : ""} trae tus
+          últimas ~50 entradas del diario y pasa a vistas las de la watchlist. También desde cada categoría, deslizando hacia
+          abajo.
         </p>
-        <button disabled={busy} onClick={() => run(async (stop) => addLog((await actualizarAnimeManga(settings, addLog, stop)).text), true)}>
-          Actualizar desde MyAnimeList
-        </button>
+        <div className="buttons">
+          <button disabled={busy} onClick={() => run(async (stop) => addLog((await actualizarAnimeManga(settings, addLog, stop)).text), true)}>
+            Anime y manga (MAL)
+          </button>
+          <button disabled={busy || !settings.letterboxdUser} onClick={() => run(async (stop) => addLog((await actualizarPeliculas(settings, addLog, stop)).text), true)}>
+            Películas (RSS)
+          </button>
+        </div>
       </section>
 
       <section>
-        <h2>Películas</h2>
+        <h2>Sinopsis y portadas</h2>
         <p className="hint">
-          El RSS de Letterboxd{settings.letterboxdUser ? ` (${settings.letterboxdUser})` : ""} trae tus últimas ~50 entradas del diario:
-          añade las nuevas, actualiza notas y pasa a vistas las de la watchlist. Para sincronizar todo el historial, sube el ZIP.
+          «Completar datos» busca lo que falte: portadas de MyAnimeList, sinopsis y pósters de TMDB para las películas
+          (necesita la API key) y sinopsis y portadas de los libros en Wikipedia y Open Library (una petición por segundo,
+          es lo más lento). «Descargar portadas» busca solo portadas. Ambos procesan solo lo pendiente y se pueden detener
+          y reanudar.
         </p>
-        <button disabled={busy || !settings.letterboxdUser} onClick={() => run(async (stop) => addLog((await actualizarPeliculas(settings, addLog, stop)).text), true)}>
-          Actualizar desde el RSS
-        </button>
-        <label>
-          ZIP exportado de Letterboxd
-          <input type="file" accept=".zip" onChange={(e) => setZip(e.target.files?.[0] ?? null)} />
-        </label>
-        <button
-          disabled={busy || !zip}
-          onClick={() =>
-            run(async () => {
-              await importLetterboxd(zip!, addLog);
-              await markSynced("letterboxd");
-            })
-          }
-        >
-          Importar el ZIP
-        </button>
+        <div className="buttons">
+          <button disabled={busy} onClick={() => run((stop) => completarDatos(settings, addLog, stop), true)}>
+            Completar datos
+          </button>
+          <button className="tonal" disabled={busy} onClick={() => run((stop) => descargarPortadas(settings, addLog, stop), true)}>
+            Descargar portadas
+          </button>
+        </div>
       </section>
 
-      <section>
-        <h2>Libros y manga en papel</h2>
-        <p className="hint">
-          Los libros nuevos se apuntan en la categoría Libros («Añadir libro»). El Excel queda como importación inicial: al
-          reimportarlo se respetan los cambios hechos en la app y no vuelven los libros que hayas eliminado.
-        </p>
-        <label>
-          Libros leídos (.xlsx)
-          <input type="file" accept=".xlsx" onChange={(e) => setLeidos(e.target.files?.[0] ?? null)} />
-        </label>
-        <label>
-          Libros sin leer (.xlsx)
-          <input type="file" accept=".xlsx" onChange={(e) => setSinLeer(e.target.files?.[0] ?? null)} />
-        </label>
-        <button
-          disabled={busy || !leidos || !sinLeer}
-          onClick={() => run(() => importBooks(leidos!, sinLeer!, settings.sheets, addLog))}
-        >
-          Importar libros
-        </button>
-        <button className="ghost" disabled={busy} onClick={() => run(() => exportBooksXlsx(addLog))}>
-          Exportar libros a Excel
-        </button>
-      </section>
+      <details className="section">
+        <summary>
+          <h2>Importar archivos</h2>
+          <span className="hint">ZIP de Letterboxd y Excel de libros</span>
+        </summary>
+        <div className="section-body">
+          <p className="hint">
+            El ZIP exportado de Letterboxd sincroniza todo el historial (las películas no se duplican).
+          </p>
+          <label className="file">
+            ZIP exportado de Letterboxd
+            <input type="file" accept=".zip" onChange={(e) => setZip(e.target.files?.[0] ?? null)} />
+          </label>
+          <button
+            disabled={busy || !zip}
+            onClick={() =>
+              run(async () => {
+                await importLetterboxd(zip!, addLog);
+                await markSynced("letterboxd");
+              })
+            }
+          >
+            Importar el ZIP
+          </button>
 
-      <section>
-        <h2>Completar datos</h2>
-        <p className="hint">
-          Busca lo que falte: portadas de MyAnimeList, sinopsis y pósters de TMDB para las películas (necesita la API
-          key) y sinopsis y portadas de los libros en Wikipedia y Open Library (una petición por segundo, es lo más
-          lento). Solo procesa lo pendiente; puedes detenerlo y reanudarlo.
-        </p>
-        <button disabled={busy} onClick={() => run((stop) => completarDatos(settings, addLog, stop), true)}>
-          Completar datos
-        </button>
-      </section>
-
-      <section>
-        <h2>Portadas</h2>
-        <p className="hint">
-          Solo busca portadas, para lo que aún no tenga: MyAnimeList (también los mangas del Excel, con el Client ID),
-          pósters de TMDB y portadas de Open Library o Wikipedia para los libros (una petición por segundo). Al terminar,
-          el Registro muestra cuántas faltan por categoría.
-        </p>
-        <button disabled={busy} onClick={() => run((stop) => descargarPortadas(settings, addLog, stop), true)}>
-          Descargar portadas
-        </button>
-      </section>
+          <p className="hint">
+            Los libros nuevos se apuntan en Libros («Añadir libro»). El Excel queda como importación inicial: al reimportarlo
+            se respetan los cambios hechos en la app y no vuelven los libros que hayas eliminado.
+          </p>
+          <label className="file">
+            Libros leídos (.xlsx)
+            <input type="file" accept=".xlsx" onChange={(e) => setLeidos(e.target.files?.[0] ?? null)} />
+          </label>
+          <label className="file">
+            Libros sin leer (.xlsx)
+            <input type="file" accept=".xlsx" onChange={(e) => setSinLeer(e.target.files?.[0] ?? null)} />
+          </label>
+          <button disabled={busy || !leidos || !sinLeer} onClick={() => run(() => importBooks(leidos!, sinLeer!, settings.sheets, addLog))}>
+            Importar libros
+          </button>
+        </div>
+      </details>
 
       <section>
         <h2>Copia de seguridad</h2>
         <p className="hint">
-          Tu biblioteca se guarda en este navegador
+          Tu biblioteca se guarda en este dispositivo
           {storage?.persisted === true && " y está protegida para que no se borre por falta de espacio"}
-          {storage?.persisted === false && ", pero el navegador puede borrarla si le falta espacio"}. Exporta una copia para
-          no perderla o para pasarla al móvil (no incluye tus claves de Ajustes).
+          {storage?.persisted === false && ", pero el sistema puede borrarla si le falta espacio"}. Exporta una copia para
+          no perderla o para pasarla a otro dispositivo (no incluye tus claves de Ajustes).
         </p>
         {storage && (
           <p className="hint">
-            Espacio usado: <strong>{mb(storage.usage)} MB</strong> de {mb(storage.quota)} MB disponibles para este sitio.
+            Espacio usado: <strong>{mb(storage.usage)} MB</strong> de {mb(storage.quota)} MB disponibles.
           </p>
         )}
-        <button disabled={busy} onClick={() => run(() => exportBackup(addLog))}>
-          Exportar copia
-        </button>
-        <label>
+        <div className="buttons">
+          <button disabled={busy} onClick={() => run(() => exportBackup(addLog))}>
+            Exportar copia
+          </button>
+          <button className="tonal" disabled={busy} onClick={() => run(() => exportBooksXlsx(addLog))}>
+            Libros a Excel
+          </button>
+        </div>
+        <label className="file">
           Restaurar una copia (.json)
           <input type="file" accept=".json,application/json" onChange={(e) => setBackup(e.target.files?.[0] ?? null)} />
         </label>
-        <button disabled={busy || !backup} onClick={() => run(() => restoreBackup(backup!, addLog))}>
+        <button className="tonal" disabled={busy || !backup} onClick={() => run(() => restoreBackup(backup!, addLog))}>
           Restaurar copia
         </button>
       </section>
@@ -176,7 +181,11 @@ export default function Data({ settings, counts, log, busy, run, addLog, stoppab
         <section>
           <h2>Registro</h2>
           <pre className="log">{log.slice(-12).join("\n")}</pre>
-          {stoppable && <button onClick={onStop}>Detener</button>}
+          {stoppable && (
+            <button className="ghost" onClick={onStop}>
+              Detener
+            </button>
+          )}
         </section>
       )}
     </div>

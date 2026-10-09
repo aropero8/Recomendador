@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { norm } from "../lib/text";
-import { Item, ItemType, Status } from "../types";
+import { Item, ItemType, Status, TYPE_LABEL } from "../types";
 import Cover from "./Cover";
-import { IconRefresh } from "./icons";
+import { progress, scoreText, titles, when } from "./format";
+import { IconRefresh, IconSearch, IconSort } from "./icons";
 
 const STATUS_FILTERS: [Status | "all", string][] = [
   ["all", "Todo"],
@@ -18,36 +19,31 @@ const SORTS: [Sort, string][] = [
 ];
 const PAGE = 60; // portadas que se añaden cada vez que se llega al final
 
-/** Fecha para «Recientes»: la que traiga la importación o, en libros, el año de lectura. */
-const when = (i: Item) => Date.parse(i.extra.date ?? "") || (i.extra.yearRead ? Date.UTC(i.extra.yearRead, 0, 1) : 0);
-
-export const scoreText = (s: number) => s.toFixed(1).replace(".0", "");
-
 interface Props {
   items: Item[];
   type: ItemType;
   onOpen: (key: string) => void;
   update: {
+    label: string; // «MyAnimeList»
     description: string; // «Actualiza anime y manga desde MyAnimeList»
-    updated: string; // «Actualizado hace 2 días»
+    updated: string; // «actualizado hace 2 días»
     busy: boolean;
     onClick: () => void;
   };
-  onAdd?: () => void; // libros: «Añadir libro»
+  openData: () => void;
 }
 
-export default function Category({ items, type, onOpen, update, onAdd }: Props) {
+export default function Category({ items, type, onOpen, update, openData }: Props) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<Status | "all">("all");
   const [sort, setSort] = useState<Sort>("score");
   const [limit, setLimit] = useState(PAGE);
   const sentinel = useRef<HTMLDivElement>(null);
 
+  const all = useMemo(() => items.filter((i) => i.type === type), [items, type]);
   const shown = useMemo(() => {
     const q = norm(query);
-    const xs = items.filter(
-      (i) => i.type === type && (status === "all" || i.status === status) && (!q || norm(i.title).includes(q)),
-    );
+    const xs = all.filter((i) => (status === "all" || i.status === status) && (!q || norm(i.title).includes(q)));
     const byTitle = (a: Item, b: Item) => a.title.localeCompare(b.title, "es");
     return xs.sort(
       sort === "title"
@@ -56,9 +52,9 @@ export default function Category({ items, type, onOpen, update, onAdd }: Props) 
           ? (a, b) => when(b) - when(a) || byTitle(a, b)
           : (a, b) => (b.userScore ?? -1) - (a.userScore ?? -1) || byTitle(a, b),
     );
-  }, [items, type, status, query, sort]);
+  }, [all, status, query, sort]);
 
-  useEffect(() => setLimit(PAGE), [type, status, query, sort]);
+  useEffect(() => setLimit(PAGE), [status, query, sort]);
 
   // Scroll infinito: al acercarse al final se añaden más portadas
   useEffect(() => {
@@ -69,65 +65,115 @@ export default function Category({ items, type, onOpen, update, onAdd }: Props) 
     return () => io.disconnect();
   }, [shown.length, limit]);
 
-  const search = <input type="search" placeholder="Buscar por título" value={query} onChange={(e) => setQuery(e.target.value)} />;
+  // Cuántos hay de cada estado, para las pestañas
+  const byStatus = useMemo(() => {
+    const c: Partial<Record<Status | "all", number>> = { all: all.length };
+    for (const i of all) c[i.status] = (c[i.status] ?? 0) + 1;
+    return c;
+  }, [all]);
+
   const rated = shown.filter((i) => i.userScore != null);
   const avg = rated.length ? rated.reduce((a, i) => a + i.userScore!, 0) / rated.length : null;
+  const filtered = query !== "" || status !== "all";
 
   return (
-    <div className="stack">
-      <div className="filters">
-        {/* Libros: «Añadir libro» y «Actualizar» juntos y el buscador debajo; el resto: buscador y «Actualizar» */}
-        <div className="cat-tools">
-          {onAdd ? (
-            <button className="add-book" onClick={onAdd}>
-              + Añadir libro
-            </button>
-          ) : (
-            search
-          )}
-          <button className={`update ${type}`} disabled={update.busy} onClick={update.onClick}>
-            <IconRefresh /> Actualizar
-          </button>
-        </div>
-        <p className="hint update-hint">
-          {update.description} · {update.updated}
-        </p>
-        {onAdd && search}
-        <div className="chips" role="group" aria-label="Estado">
-          {STATUS_FILTERS.map(([s, label]) => (
-            <button key={s} className={`chip ${status === s ? `on ${type}` : ""}`} onClick={() => setStatus(s)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="chips" role="group" aria-label="Orden">
-          {SORTS.map(([s, label]) => (
-            <button key={s} className={`chip ${sort === s ? `on ${type}` : ""}`} onClick={() => setSort(s)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <p className="hint">
-          {shown.length} {shown.length === 1 ? "título" : "títulos"}
-          {avg != null && ` · nota media ${avg.toFixed(1)} (${rated.length} con nota)`}
-        </p>
+    <div className={`stack category ${type}`}>
+      <div className="sync-row">
+        <span className="hint">
+          {update.label} · {update.updated}
+        </span>
+        <button className="text-btn" disabled={update.busy} onClick={update.onClick} title={update.description}>
+          <IconRefresh /> Actualizar
+        </button>
       </div>
 
-      {shown.length === 0 ? (
-        <p className="empty">No hay títulos con estos filtros.</p>
+      <label className="search">
+        <IconSearch />
+        <input
+          type="search"
+          enterKeyHint="search"
+          placeholder={`Buscar en ${TYPE_LABEL[type]}`}
+          aria-label="Buscar por título"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        />
+      </label>
+
+      <div className="chips scroll" role="group" aria-label="Estado">
+        {STATUS_FILTERS.map(([s, label]) => (
+          <button key={s} className={`chip ${status === s ? "on" : ""}`} aria-pressed={status === s} onClick={() => setStatus(s)}>
+            {label}
+            <span className="chip-n">{byStatus[s] ?? 0}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="summary">
+        <span className="hint">
+          {titles(shown.length)}
+          {avg != null && ` · media ${scoreText(avg)}`}
+        </span>
+        <label className="sort">
+          <IconSort />
+          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Ordenar">
+            {SORTS.map(([s, label]) => (
+              <option key={s} value={s}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {all.length === 0 ? (
+        <div className="empty">
+          <p>Aún no hay nada en {TYPE_LABEL[type]}.</p>
+          <div className="row-actions center">
+            <button className="tonal" disabled={update.busy} onClick={update.onClick}>
+              Actualizar desde {update.label}
+            </button>
+            <button className="ghost" onClick={openData}>
+              Ir a Datos
+            </button>
+          </div>
+        </div>
+      ) : shown.length === 0 ? (
+        <div className="empty">
+          <p>No hay títulos con estos filtros.</p>
+          {filtered && (
+            <button
+              className="ghost"
+              onClick={() => {
+                setQuery("");
+                setStatus("all");
+              }}
+            >
+              Quitar filtros
+            </button>
+          )}
+        </div>
       ) : (
         <ul className="grid">
-          {shown.slice(0, limit).map((i) => (
-            <li key={i.key}>
-              <button className="card" onClick={() => onOpen(i.key)}>
-                <div className="card-cover">
-                  <Cover item={i} />
-                  {i.userScore != null && <span className={`badge ${type}`}>{scoreText(i.userScore)}</span>}
-                </div>
-                <span className="card-title">{i.title}</span>
-              </button>
-            </li>
-          ))}
+          {shown.slice(0, limit).map((i) => {
+            const p = i.status === "reading" ? progress(i) : null;
+            return (
+              <li key={i.key}>
+                <button className="card" onClick={() => onOpen(i.key)}>
+                  <div className="card-cover">
+                    <Cover item={i} />
+                    {i.userScore != null && <span className="badge">{scoreText(i.userScore)}</span>}
+                    {p != null && (
+                      <span className="bar" aria-label={`${Math.round(p * 100)} %`}>
+                        <span style={{ width: `${p * 100}%` }} />
+                      </span>
+                    )}
+                  </div>
+                  <span className="card-title">{i.title}</span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
       {limit < shown.length && <div ref={sentinel} className="sentinel" aria-hidden />}

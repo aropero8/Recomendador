@@ -10,34 +10,38 @@ Importa tus listas y consúltalas en el móvil. Todo se guarda en el dispositivo
   lista de MAL no se buscan y usan la portada de MAL
 
 ### Mantenerla al día
-- Cada categoría tiene un botón **Actualizar** junto al buscador (en Libros, junto a
-  «Añadir libro») con la fecha de la última vez debajo («Actualizado hace 2 días»).
-  Muestra el progreso y un resumen de lo actualizado («Películas: 3 nuevas, 1 nota
-  cambiada»). Anime y manga se actualizan a la vez (es la misma lista de MAL); en
-  Libros busca las sinopsis y portadas que falten. Si falta algo en Ajustes, el aviso
-  lo dice y lleva a Ajustes.
+- En cada categoría, **desliza hacia abajo** desde arriba del todo o pulsa
+  **Actualizar** (encima del buscador, junto a la fecha de la última vez: «MyAnimeList ·
+  actualizado hace 2 días»). El progreso y el resumen («Películas: 3 nuevas, 1 nota
+  cambiada») salen en un aviso flotante abajo. Anime y manga se actualizan a la vez
+  (es la misma lista de MAL); en Libros busca las sinopsis y portadas que falten. Si
+  falta algo en Ajustes, el aviso lo dice y lleva a Ajustes.
 - MAL: vuelve a leer tu lista y aplica solo los cambios (nuevos, nota, estado,
   progreso; quita lo que ya no esté). Busca la portada solo de los nuevos.
 - Letterboxd: lee `https://letterboxd.com/<usuario>/rss/` (usuario en Ajustes). Trae
   las últimas ~50 entradas del diario: añade las nuevas, actualiza notas y pasa a
   vistas las de la watchlist; completa con TMDB solo las nuevas. Para sincronizar
   todo el historial, sube el ZIP en Datos (las películas no se duplican).
-- Libros: «Añadir libro» sugiere títulos de Open Library mientras escribes y busca
-  la sinopsis al guardar. En la ficha: «Editar», «Marcar como leído» y «Eliminar».
-  Lo que cambies en un libro del Excel se guarda en `extra.userEdits` y gana al
-  reimportar; los que elimines no vuelven. «Exportar libros a Excel» (Datos)
-  descarga un `.xlsx` con todos.
+- Libros: «Añadir libro» (el botón flotante de la categoría) sugiere títulos de Open
+  Library mientras escribes y busca la sinopsis al guardar. En la ficha: «Editar»,
+  «Marcar como leído» y «Eliminar». Lo que cambies en un libro del Excel se guarda en
+  `extra.userEdits` y gana al reimportar; los que elimines no vuelven. «Libros a
+  Excel» (Datos, en Copia de seguridad) descarga un `.xlsx` con todos.
 - Nada de esto borra sinopsis ni portadas encontradas o elegidas a mano. La copia
   de seguridad incluye los libros añadidos en la app.
 
 En el navegador, MAL y el RSS de Letterboxd pasan por el proxy de `npm run dev`
 (`/mal-api`, `/lb-rss`) porque no admiten CORS; en Android van directos.
 
-Pantallas: inicio (una tarjeta por categoría con sus portadas mejor puntuadas) ->
-categoría (cuadrícula de portadas con buscador, filtro por estado y orden) ->
-ficha (portada, nota, sinopsis y datos según el tipo). Datos y Ajustes se abren
-desde los iconos de la cabecera. El botón «atrás» del navegador o de Android vuelve
-a la pantalla anterior.
+Pantallas (pensadas para el móvil): una barra inferior con Inicio y las cuatro
+categorías, al alcance del pulgar. Inicio: una tarjeta por categoría con sus portadas
+mejor puntuadas y las filas «Continúa» (lo que tienes a medias) y «Terminado hace
+poco». Categoría: cuadrícula de portadas con buscador, filtro por estado (con cuántos
+hay de cada uno), orden y barra de progreso en lo que estás viendo o leyendo. Ficha:
+portada sobre su versión desenfocada, nota, sinopsis (con «Leer más» si es larga) y
+datos según el tipo. Datos y Ajustes se abren desde los iconos de la cabecera; en
+Ajustes se elige el tema (automático, claro u oscuro). El botón «atrás» de Android
+vuelve a la pantalla anterior; desde una categoría, al inicio, y desde el inicio sale.
 
 Importar tarda segundos: las sinopsis y portadas se traen después con el botón
 «Completar datos» de Datos (portadas de MAL; sinopsis y pósters de TMDB; sinopsis

@@ -1,35 +1,68 @@
 import { ChangeEvent, useState } from "react";
 import type { Settings } from "../settings";
+import { loadTheme, saveTheme, Theme } from "../theme";
+
+const THEMES: [Theme, string][] = [
+  ["system", "Automático"],
+  ["light", "Claro"],
+  ["dark", "Oscuro"],
+];
 
 export default function SettingsTab({ settings, onSave }: { settings: Settings; onSave: (s: Settings) => Promise<void> }) {
   const [s, setS] = useState(settings);
+  const [theme, setTheme] = useState(loadTheme);
   const set = (k: keyof Settings) => (e: ChangeEvent<HTMLInputElement>) => setS({ ...s, [k]: e.target.value });
+  const changed = (Object.keys(s) as (keyof Settings)[]).some((k) => s[k] !== settings[k]);
+  const field = { autoCapitalize: "none", autoCorrect: "off", autoComplete: "off", spellCheck: false } as const;
 
   return (
     <div className="stack">
       <section>
+        <h2>Apariencia</h2>
+        <div className="segmented" role="radiogroup" aria-label="Tema">
+          {THEMES.map(([t, label]) => (
+            <button
+              key={t}
+              role="radio"
+              aria-checked={theme === t}
+              className={theme === t ? "on" : ""}
+              onClick={() => {
+                saveTheme(t);
+                setTheme(t);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="hint">Automático sigue el modo claro u oscuro del móvil.</p>
+      </section>
+
+      <section>
         <h2>Cuentas</h2>
         <label>
           Usuario de MyAnimeList
-          <input value={s.malUser} onChange={set("malUser")} autoCapitalize="none" />
+          <input value={s.malUser} onChange={set("malUser")} {...field} />
         </label>
         <label>
           Client ID de MyAnimeList
-          <input value={s.malClientId} onChange={set("malClientId")} type="password" autoCapitalize="none" />
+          <input value={s.malClientId} onChange={set("malClientId")} type="password" {...field} />
         </label>
         <label>
           Usuario de Letterboxd
-          <input value={s.letterboxdUser} onChange={set("letterboxdUser")} autoCapitalize="none" placeholder="el de letterboxd.com/usuario" />
+          <input value={s.letterboxdUser} onChange={set("letterboxdUser")} placeholder="el de letterboxd.com/usuario" {...field} />
         </label>
         <label>
           API key de TMDB (v3, la corta)
-          <input value={s.tmdbKey} onChange={set("tmdbKey")} type="password" autoCapitalize="none" />
+          <input value={s.tmdbKey} onChange={set("tmdbKey")} type="password" {...field} />
         </label>
         <label>
           Pestañas de «Sin leer» a usar (vacío = todas)
-          <input value={s.sheets} onChange={set("sheets")} />
+          <input value={s.sheets} onChange={set("sheets")} {...field} />
         </label>
-        <button onClick={() => onSave(s)}>Guardar ajustes</button>
+        <button disabled={!changed} onClick={() => onSave(s)}>
+          Guardar ajustes
+        </button>
         <p className="hint">Las claves se guardan solo en este dispositivo.</p>
       </section>
 
