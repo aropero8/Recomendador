@@ -8,16 +8,18 @@ import { portadasLibros } from "./ingest/covers";
 import { actualizarAnimeManga, actualizarLibros, actualizarPeliculas } from "./ingest/update";
 import { addBook, BookInput, deleteBook, markAsRead, updateBook } from "./libros";
 import { fusionarManga } from "./merge";
-import { useNav, View } from "./nav";
+import { isOverlay, useNav, View } from "./nav";
 import { loadSettings, saveSettings, Settings } from "./settings";
 import { loadSyncTimes, MissingSettings, SyncResult, SyncSource, SyncTimes, timeAgo } from "./sync";
 import { Item, ITEM_TYPES, ItemType, Log, TYPE_LABEL } from "./types";
 import BookForm from "./ui/BookForm";
+import BottomNav from "./ui/BottomNav";
 import Category from "./ui/Category";
 import Data, { Counts } from "./ui/Data";
 import Detail from "./ui/Detail";
 import Home from "./ui/Home";
-import { IconBack, IconData, IconSettings } from "./ui/icons";
+import { IconBack, IconClose, IconData, IconPlus, IconRefresh, IconSettings } from "./ui/icons";
+import { PULL_THRESHOLD, usePullToRefresh } from "./ui/pull";
 import SettingsTab from "./ui/SettingsTab";
 
 const TITLE: Partial<Record<View["v"], string>> = { data: "Datos", settings: "Ajustes" };
@@ -25,15 +27,23 @@ const TITLE: Partial<Record<View["v"], string>> = { data: "Datos", settings: "Aj
 type SyncFn = (s: Settings, log: Log, stop: Stopper) => Promise<SyncResult>;
 
 /** «Actualizar» de cada categoría: anime y manga comparten la lista de MAL (y la fecha); libros busca sinopsis y portadas. */
-const UPDATE: Record<ItemType, { source: SyncSource; description: string; fn: SyncFn }> = {
-  anime: { source: "mal", description: "Actualiza anime y manga desde MyAnimeList", fn: actualizarAnimeManga },
-  manga: { source: "mal", description: "Actualiza anime y manga desde MyAnimeList", fn: actualizarAnimeManga },
-  movie: { source: "letterboxd", description: "Desde el RSS de Letterboxd", fn: actualizarPeliculas },
-  book: { source: "books", description: "Busca las sinopsis y portadas que falten", fn: actualizarLibros },
+const UPDATE: Record<ItemType, { source: SyncSource; label: string; description: string; fn: SyncFn }> = {
+  anime: { source: "mal", label: "MyAnimeList", description: "Actualiza anime y manga desde MyAnimeList", fn: actualizarAnimeManga },
+  manga: { source: "mal", label: "MyAnimeList", description: "Actualiza anime y manga desde MyAnimeList", fn: actualizarAnimeManga },
+  movie: { source: "letterboxd", label: "Letterboxd", description: "Desde el RSS de Letterboxd", fn: actualizarPeliculas },
+  book: { source: "books", label: "Sinopsis y portadas", description: "Busca las sinopsis y portadas que falten", fn: actualizarLibros },
 };
 
+/** Aviso flotante abajo: progreso y resumen de lo que se está haciendo. autoHide: se cierra solo. */
+interface Banner {
+  text: string;
+  done: boolean;
+  goSettings?: boolean; // falta algo en Ajustes
+  autoHide?: boolean;
+}
+
 export default function App() {
-  const { view, go, back } = useNav();
+  const { view, go, back, tab } = useNav();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -42,12 +52,22 @@ export default function App() {
   const stopper = useRef<Stopper>({ stopped: false });
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [syncTimes, setSyncTimes] = useState<SyncTimes>({});
-  // progreso y resumen de una actualización; goSettings: falta algo en Ajustes
-  const [banner, setBanner] = useState<{ text: string; done: boolean; goSettings?: boolean } | null>(null);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const busyRef = useRef(false);
   const main = useRef<HTMLElement>(null);
   const prev = useRef<View>(view);
 
-  const addLog = useCallback((m: string) => setLog((l) => [...l.slice(-60), m]), []);
+  // Lo que hay debajo de la ficha o el formulario: la última pantalla normal
+  const baseRef = useRef<View>(view);
+  if (!isOverlay(view)) baseRef.current = view;
+  const base = baseRef.current;
+
+  // Mientras hay un proceso en marcha, cada paso se ve también en el aviso de abajo
+  const addLog = useCallback((m: string) => {
+    setLog((l) => [...l.slice(-60), m]);
+    if (busyRef.current) setBanner({ text: m, done: false });
+  }, []);
   const userCovers = useUserCovers();
 
   // Lo que se muestra: manga repetido (Excel + MAL) fundido y portadas elegidas a mano por encima de las automáticas
@@ -78,21 +98,29 @@ export default function App() {
     return () => sub.unsubscribe();
   }, [addLog]);
 
-  // Al cambiar de pantalla se vuelve arriba, salvo al abrir o cerrar una ficha o un formulario (la categoría conserva su scroll)
+  // Al cambiar de pantalla se vuelve arriba, salvo al abrir o cerrar una ficha o un formulario (lo de debajo conserva su scroll)
   useEffect(() => {
-    const overlay = (v: View["v"]) => v === "item" || v === "book";
-    const p = prev.current.v;
-    if (!((p === "cat" && overlay(view.v)) || (overlay(p) && (view.v === "cat" || overlay(view.v))))) main.current?.scrollTo(0, 0);
+    if (!isOverlay(prev.current) && !isOverlay(view)) {
+      main.current?.scrollTo(0, 0);
+      setScrolled(false);
+    }
     prev.current = view;
   }, [view]);
 
   // Escape cierra la ficha o el formulario (teclado)
   useEffect(() => {
-    if (view.v !== "item" && view.v !== "book") return;
+    if (!isOverlay(view)) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && back();
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [view.v, back]);
+  }, [view, back]);
+
+  // Los avisos de confirmación se cierran solos
+  useEffect(() => {
+    if (!banner?.autoHide) return;
+    const t = setTimeout(() => setBanner((b) => (b === banner ? null : b)), 3500);
+    return () => clearTimeout(t);
+  }, [banner]);
 
   const counts = useMemo(() => {
     const c = {} as Counts;
@@ -112,35 +140,36 @@ export default function App() {
     stopper.current = { stopped: false };
     setStoppable(canStop);
     setBusy(true);
+    busyRef.current = true;
     try {
       await fn(stopper.current);
     } catch (e: any) {
       addLog(isQuotaError(e) ? await quotaMessage() : `Error: ${e?.message ?? e}`);
     } finally {
+      busyRef.current = false;
       setBusy(false);
       setStoppable(false);
+      setBanner((b) => (b && !b.done ? { ...b, done: true } : b)); // el último paso queda como resumen
       storageInfo().then(setStorage, () => null);
       loadSyncTimes().then(setSyncTimes, () => null);
     }
   };
 
-  /** Actualización con progreso en la banda superior y, al terminar, su resumen. */
+  /** Actualización con progreso en el aviso de abajo y, al terminar, su resumen. */
   const sync = (fn: SyncFn) =>
     run(async (stop) => {
-      const log = (m: string) => {
-        addLog(m);
-        setBanner({ text: m, done: false });
-      };
       setBanner({ text: "Actualizando…", done: false });
       try {
-        const res = await fn(settings!, log, stop);
+        const res = await fn(settings!, addLog, stop);
         setSyncTimes(await loadSyncTimes()); // la fecha cambia a la vez que aparece el resumen
         const text = stop.stopped ? `Detenido. ${res.text}` : res.text;
+        busyRef.current = false; // el resumen ya no es un paso intermedio
         addLog(text);
         setBanner({ text, done: true, goSettings: res.goSettings });
       } catch (e: any) {
         const ajustes = e instanceof MissingSettings;
         const msg = isQuotaError(e) ? await quotaMessage() : ajustes ? e.message : `Error: ${e?.message ?? e}`;
+        busyRef.current = false;
         addLog(msg);
         setBanner({ text: msg, done: true, goSettings: ajustes });
       }
@@ -150,6 +179,7 @@ export default function App() {
     if (key) {
       await updateBook(key, b);
       back();
+      setBanner({ text: "Cambios guardados", done: true, autoHide: true });
       return;
     }
     const newKey = await addBook(b);
@@ -165,93 +195,85 @@ export default function App() {
     });
   };
 
+  const catType = base.v === "cat" ? base.type : null;
+  const upd = catType ? UPDATE[catType] : undefined;
+  const pull = usePullToRefresh(main, upd && settings && !busy ? () => sync(upd.fn) : null);
+
   if (!settings) return null;
 
-  const catType = view.v === "cat" || view.v === "item" || view.v === "book" ? view.type : null;
-  const title = catType ? TYPE_LABEL[catType] : TITLE[view.v];
-  const upd = catType ? UPDATE[catType] : undefined;
   const lastSync = upd && syncTimes[upd.source];
+  const topLevel = base.v === "home" || base.v === "cat"; // con barra inferior
+  const title = catType ? TYPE_LABEL[catType] : TITLE[base.v];
 
   return (
-    <div className="app">
-      <header className="top">
-        {view.v === "home" ? (
+    <div className={`app ${topLevel ? "with-nav" : ""} ${isOverlay(view) ? "overlay-open" : ""}`}>
+      <header className={`top ${scrolled ? "scrolled" : ""}`}>
+        {base.v === "home" ? (
           <span className="brand">Recomendador</span>
         ) : (
           <>
-            <button className="icon" onClick={back} aria-label="Volver">
-              <IconBack />
-            </button>
-            <span className="top-title">
-              {catType && <span className={`dot ${catType}`} />} {title}
-            </span>
+            {!topLevel && (
+              <button className="icon" onClick={back} aria-label="Volver">
+                <IconBack />
+              </button>
+            )}
+            <span className={`top-title ${catType ? `dotted ${catType}` : ""}`}>{title}</span>
           </>
         )}
         <div className="actions">
-          <button className={`icon ${view.v === "data" ? "on" : ""}`} onClick={() => view.v !== "data" && go({ v: "data" })} aria-label="Datos" title="Datos">
+          <button className={`icon ${base.v === "data" ? "on" : ""}`} onClick={() => base.v !== "data" && go({ v: "data" })} aria-label="Datos" title="Datos">
             <IconData />
           </button>
           <button
-            className={`icon ${view.v === "settings" ? "on" : ""}`}
-            onClick={() => view.v !== "settings" && go({ v: "settings" })}
+            className={`icon ${base.v === "settings" ? "on" : ""}`}
+            onClick={() => base.v !== "settings" && go({ v: "settings" })}
             aria-label="Ajustes"
             title="Ajustes"
           >
             <IconSettings />
           </button>
         </div>
+        {busy && <div className="progress" role="progressbar" aria-label="Trabajando" />}
       </header>
 
-      {banner && (
-        <div className={`banner ${banner.done ? "done" : ""}`} role="status" aria-live="polite">
-          <span>{banner.text}</span>
-          {!banner.done && stoppable && (
-            <button className="link" onClick={() => (stopper.current.stopped = true)}>
-              Detener
-            </button>
-          )}
-          {banner.done && banner.goSettings && (
-            <button
-              className="link"
-              onClick={() => {
-                setBanner(null);
-                go({ v: "settings" });
-              }}
-            >
-              Ir a Ajustes
-            </button>
-          )}
-          {banner.done && (
-            <button className="link" onClick={() => setBanner(null)} aria-label="Cerrar aviso">
-              ✕
-            </button>
-          )}
-        </div>
-      )}
-
-      <main ref={main} className={catType ? "wide" : ""}>
-        {view.v === "home" && (
+      <main
+        ref={main}
+        className={`${catType ? `wide ${catType}` : ""} ${upd ? "ptr-on" : ""}`}
+        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 4)}
+      >
+        {pull > 0 && (
+          <div className={`ptr ${pull >= PULL_THRESHOLD ? "ready" : ""}`} style={{ transform: `translate(-50%, ${pull - 44}px)` }} aria-hidden>
+            <span style={{ transform: `rotate(${pull * 3}deg)` }}>
+              <IconRefresh />
+            </span>
+          </div>
+        )}
+        {base.v === "home" && (
           <Home
             items={shown}
-            openCategory={(type) => go({ v: "cat", type })}
+            openCategory={(type) => tab({ v: "cat", type })}
+            openItem={(i) => go({ v: "item", type: i.type, key: i.key })}
             openData={() => go({ v: "data" })}
+            openSettings={() => go({ v: "settings" })}
           />
         )}
         {catType && (
           <Category
+            key={catType}
             items={shown ?? []}
             type={catType}
             onOpen={(key) => go({ v: "item", type: catType, key })}
             update={{
+              label: upd!.label,
               description: upd!.description,
-              updated: lastSync ? `Actualizado ${timeAgo(lastSync)}` : "Sin actualizar todavía",
+              updated: lastSync ? `actualizado ${timeAgo(lastSync)}` : "sin actualizar",
               busy,
               onClick: () => sync(upd!.fn),
             }}
-            onAdd={catType === "book" ? () => go({ v: "book", type: "book" }) : undefined}
+            openData={() => go({ v: "data" })}
           />
         )}
-        {view.v === "data" && (
+        {base.v === "data" && (
           <div className="narrow">
             <Data
               settings={settings}
@@ -266,7 +288,7 @@ export default function App() {
             />
           </div>
         )}
-        {view.v === "settings" && (
+        {base.v === "settings" && (
           <div className="narrow">
             <SettingsTab
               settings={settings}
@@ -274,11 +296,57 @@ export default function App() {
                 await saveSettings(s);
                 setSettings(s);
                 addLog("Ajustes guardados");
+                setBanner({ text: "Ajustes guardados", done: true, autoHide: true });
               }}
             />
           </div>
         )}
       </main>
+
+      {topLevel && (
+        <BottomNav
+          active={catType ?? "home"}
+          onSelect={(t) => {
+            if (t === (catType ?? "home")) main.current?.scrollTo({ top: 0, behavior: "smooth" });
+            else tab(t === "home" ? { v: "home" } : { v: "cat", type: t });
+          }}
+        />
+      )}
+
+      {/* Abajo, encima de la barra: «Añadir libro» y el aviso (que empuja el botón hacia arriba) */}
+      <div className="floating">
+        {catType === "book" && !isOverlay(view) && (
+          <button className="fab book" onClick={() => go({ v: "book", type: "book" })}>
+            <IconPlus /> Añadir libro
+          </button>
+        )}
+        {banner && (
+          <div className={`snackbar ${banner.done ? "done" : ""}`} role="status" aria-live="polite">
+            <span>{banner.text}</span>
+            {!banner.done && stoppable && (
+              <button className="link" onClick={() => (stopper.current.stopped = true)}>
+                Detener
+              </button>
+            )}
+            {banner.done && banner.goSettings && (
+              <button
+                className="link"
+                onClick={() => {
+                  setBanner(null);
+                  go({ v: "settings" });
+                }}
+              >
+                Ir a Ajustes
+              </button>
+            )}
+            {banner.done && (
+              <button className="icon small" onClick={() => setBanner(null)} aria-label="Cerrar aviso">
+                <IconClose />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {view.v === "item" && (
         <Detail

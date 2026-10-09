@@ -93,7 +93,7 @@ export default function BookForm({ item, items, onSave, onCancel }: Props) {
   const formats = b.format && !FORMATS.includes(b.format) ? [...FORMATS, b.format] : FORMATS; // los del Excel pueden ser otros
 
   return (
-    <div className="detail" role="dialog" aria-modal="true" aria-label={item ? "Editar libro" : "Añadir libro"}>
+    <div className="detail sheet book" role="dialog" aria-modal="true" aria-label={item ? "Editar libro" : "Añadir libro"}>
       <header className="top">
         <button className="icon" onClick={onCancel} aria-label="Volver">
           <IconBack />
@@ -214,7 +214,7 @@ export default function BookForm({ item, items, onSave, onCancel }: Props) {
             {error}
           </p>
         )}
-        <div className="row2">
+        <div className="form-actions row2">
           <button type="button" className="ghost" onClick={onCancel}>
             Cancelar
           </button>
