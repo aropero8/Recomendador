@@ -102,4 +102,11 @@ excluye Excel, ZIP, CSV y `.env`.
   se usan bajo licencia [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.es);
   la app guarda el enlace al artículo de origen de cada resumen.
 - Modelo de embeddings (Fase 2): multilingual-e5-small (MIT).
-- Código bajo licencia MIT (ver `LICENSE`).
+
+## Licencia
+Copyright (C) 2026 aropero8
+
+Este programa es software libre: puedes redistribuirlo y modificarlo bajo los términos
+de la Licencia Pública General de GNU (GPL) publicada por la Free Software Foundation,
+versión 3 o (a tu elección) cualquier versión posterior. Se distribuye con la esperanza
+de que sea útil, pero SIN NINGUNA GARANTÍA. Texto completo en `LICENSE`.
