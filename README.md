@@ -60,17 +60,41 @@ y reanudar.
 Al terminar, el Registro muestra cuántas portadas faltan por categoría. Si una
 imagen no carga, se ve un recuadro del color de la categoría con las iniciales.
 
-## Fase 2 (pendiente): recomendador
-En `fase2-pendiente/` está el código ya escrito: embeddings locales, perfil de
-gustos y ranking. Falta la capa con LLM (Gemini con clave gratuita, más un botón
-para copiar tu perfil a cualquier chat) y la verificación de títulos.
+## Fase 2: recomendador
+**Recomiéndame** (tarjeta del inicio o icono ✦ de la cabecera, que abre la categoría
+en la que estás): eliges qué quieres (anime, manga, película o libro), de dónde (de
+tus pendientes, algo nuevo o ambos), puedes escribir lo que te apetece («algo corto
+y oscuro», «parecido a Steins;Gate») y marcar «basado en todos mis gustos» para
+recomendaciones cruzadas.
+
+1. **Perfil** (`src/reco/profile.ts`, sin IA): por categoría, tus 15 mejor
+   puntuados, los 5 peor puntuados, los 10 más recientes, los géneros que más
+   puntúas alto y tu media; títulos con autor, año o título original. Texto de
+   unos 3.000 tokens como mucho.
+2. **Gemini** (`src/reco/gemini.ts`): con tu API key gratuita de Google AI Studio
+   (Ajustes) y el modelo `gemini-3.8-flash` por defecto. Pide la respuesta en
+   JSON con esquema: título, título original, año, autor, si es de tus
+   pendientes y por qué te lo recomienda, citando títulos tuyos parecidos.
+3. **Verificación** (`src/reco/verify.ts`): anime y manga en MAL, películas en
+   TMDB y libros en Open Library. Solo se muestra lo que se encuentra con
+   seguridad (título y año), con portada, enlace y sinopsis; se descarta lo que
+   ya has visto o leído.
+4. **Tarjetas**: «Añadir a pendientes» (libros en la app; anime, manga y
+   películas con el enlace para añadirlos en MAL o Letterboxd), «Ya lo he visto»
+   y «No me interesa» (no se vuelven a recomendar y se mandan a Gemini como
+   contexto). Las últimas recomendaciones de cada categoría se guardan para
+   verlas sin gastar peticiones.
+
+Si llegas al límite gratuito de Gemini, **Copiar mi perfil** copia el perfil con
+unas instrucciones para pegarlo en cualquier chat de IA.
 
 ## Primeros pasos (en el PC)
     node --version        # necesita 20 o superior
     npm install
     npm run dev           # prueba en el navegador
 
-En la app: Ajustes (usuario y Client ID de MAL, usuario de Letterboxd, API key de TMDB) -> Datos (importar) -> inicio.
+En la app: Ajustes (usuario y Client ID de MAL, usuario de Letterboxd, API key de TMDB
+y, para las recomendaciones, API key de Gemini) -> Datos (importar) -> inicio.
 
 El Client ID de MyAnimeList se crea gratis en https://myanimelist.net/apiconfig
 (tipo de app: "other"). La API de MAL no admite CORS, así que en el navegador
@@ -78,11 +102,23 @@ las peticiones pasan por el proxy de `npm run dev` (`/mal-api`); en Android van
 directas. Con `npm run preview` o una web estática la importación de MAL no funciona.
 
 ## Android
-    npx cap add android   # solo la primera vez (necesita Android Studio)
-    npm run android       # compila, sincroniza y abre Android Studio
+La carpeta `android/` está en el repositorio (proyecto de Capacitor 7). Hace falta
+**JDK 21** (Gradle 8.11 no funciona con Java 25) y el Android SDK con la
+plataforma 35 (Gradle la descarga si la licencia está aceptada).
 
-## Notas
-- Sin probar aún con datos reales: es un primer borrador.
+    npm run build && npx cap sync android     # copia la web y los plugins al proyecto Android
+    cd android && gradlew.bat assembleDebug   # APK de depuración
+    # -> android/app/build/outputs/apk/debug/app-debug.apk
+    npm run android                           # o abrirlo en Android Studio
+
+Si Java 21 no es el que usa la terminal, pon `JAVA_HOME` a la carpeta del JDK 21
+antes de `gradlew.bat`.
+
+En el móvil, «Exportar copia» y «Libros a Excel» abren «Compartir» para
+guardar el archivo en Drive, Descargas o mandarlo (en el navegador se descargan).
+
+Icono y pantalla de carga: `node scripts/icono.mjs` genera las imágenes de
+`assets/` y `npx @capacitor/assets generate --android` todos los tamaños.
 
 ## Copias de seguridad
 La biblioteca vive en la base de datos del navegador (o de la app en Android):
@@ -93,9 +129,22 @@ o en el móvil. La copia no incluye las claves de Ajustes. Los archivos
 `backup*.json` están en `.gitignore`.
 
 ## Privacidad
-Tus listas, notas y claves nunca salen del dispositivo (salvo las consultas a
-las APIs públicas). El repositorio no incluye datos personales: `.gitignore`
-excluye Excel, ZIP, CSV y `.env`.
+Tus listas, notas y claves se guardan solo en el dispositivo. Salen de él:
+- Las consultas a las APIs públicas para importar y completar (MAL, Letterboxd,
+  TMDB, Open Library, Wikipedia): usuario, títulos que se buscan y claves de cada
+  servicio.
+- **Al pedir recomendaciones, se envía a Google (Gemini)**: tu perfil de gustos
+  (títulos con autor o año, notas, géneros y medias), la lista de tus pendientes
+  de esa categoría, los títulos que ya has visto o leído de esa categoría, lo
+  marcado como visto o «no me interesa» y lo que escribas en «lo que te apetece».
+  No se envían sinopsis, portadas, fechas exactas ni las claves de otros
+  servicios. Con el **nivel gratuito**, Google puede usar ese contenido para
+  mejorar sus productos (condiciones de la API de Gemini); si no quieres, no uses
+  «Recomiéndame» o usa «Copiar mi perfil» en el chat que prefieras.
+
+El repositorio no incluye datos personales: `.gitignore` excluye Excel, ZIP, CSV
+y `.env`, y las claves (también la de Gemini) solo están en los Ajustes del
+dispositivo, nunca en el código ni en las copias de seguridad.
 
 ## Créditos y licencias
 - Esta aplicación usa la API de TMDB, pero no está avalada ni certificada por TMDB.
@@ -105,7 +154,8 @@ excluye Excel, ZIP, CSV y `.env`.
 - Resúmenes de Wikipedia (CC BY-SA): los textos de [Wikipedia](https://www.wikipedia.org)
   se usan bajo licencia [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.es);
   la app guarda el enlace al artículo de origen de cada resumen.
-- Modelo de embeddings (Fase 2): multilingual-e5-small (MIT).
+- Recomendaciones generadas con [Gemini](https://ai.google.dev) (Google) y comprobadas
+  en MyAnimeList, TMDB y Open Library.
 
 ## Licencia
 Copyright (C) 2026 aropero8

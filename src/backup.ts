@@ -1,5 +1,6 @@
 import { CoverBackup, exportCovers, importCovers } from "./covers/user";
 import { db, putInBatches } from "./db";
+import { saveFile } from "./lib/save";
 import { ITEM_TYPES, type Item, type Log } from "./types";
 
 // Copia de seguridad de la biblioteca en un .json. No incluye las claves de Ajustes
@@ -12,13 +13,10 @@ export async function exportBackup(log: Log) {
   const covers = await exportCovers();
   const meta = await db.meta.toArray();
   const data = { format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(), items, covers, meta };
-  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `backup-recomendador-${data.exportedAt.slice(0, 10)}.json`; // .gitignore: backup*.json
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-  log(`Copia exportada: ${items.length} títulos${covers.length ? ` y ${covers.length} portadas elegidas a mano` : ""} (${a.download})`);
+  const name = `backup-recomendador-${data.exportedAt.slice(0, 10)}.json`; // .gitignore: backup*.json
+  const saved = await saveFile(name, new Blob([JSON.stringify(data)], { type: "application/json" }));
+  if (!saved) return log("Copia sin guardar: has cerrado «Compartir».");
+  log(`Copia exportada: ${items.length} títulos${covers.length ? ` y ${covers.length} portadas elegidas a mano` : ""} (${name})`);
 }
 
 const isItem = (i: any): i is Item =>

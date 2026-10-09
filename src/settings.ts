@@ -5,10 +5,12 @@ export interface Settings {
   malClientId: string;
   tmdbKey: string;
   letterboxdUser: string; // para leer su RSS público
+  geminiKey: string; // recomendaciones con IA (nivel gratuito de Google AI Studio)
+  geminiModel: string; // vacío = el modelo por defecto (ver reco/gemini.ts)
   sheets: string; // pestañas de "Sin leer" a usar, separadas por comas
 }
 
-const DEFAULTS: Settings = { malUser: "", malClientId: "", tmdbKey: "", letterboxdUser: "", sheets: "" };
+const DEFAULTS: Settings = { malUser: "", malClientId: "", tmdbKey: "", letterboxdUser: "", geminiKey: "", geminiModel: "", sheets: "" };
 
 export async function loadSettings(): Promise<Settings> {
   const { value } = await Preferences.get({ key: "settings" });
