@@ -44,6 +44,7 @@ export default function Recommend({ items, initialType, busy, onRecommend, onCop
   const [source, setSource] = useState<RecoSource>("both");
   const [wish, setWish] = useState("");
   const [allTastes, setAllTastes] = useState(false);
+  const [ocean, setOcean] = useState(false);
   const [runs, setRuns] = useState<LastRuns>({});
 
   // Las últimas recomendaciones se guardan en meta: se ven al momento cuando llegan unas nuevas
@@ -86,7 +87,20 @@ export default function Recommend({ items, initialType, busy, onRecommend, onCop
           </span>
           <input type="checkbox" role="switch" checked={allTastes} onChange={(e) => setAllTastes(e.target.checked)} />
         </label>
-        <button className="big" disabled={busy || (source === "pending" && !pending)} onClick={() => onRecommend({ type, source, wish, allTastes })}>
+        {type === "book" && source !== "pending" && (
+          <label className="switch-row">
+            <span>
+              Pistas de «An Ocean of Books» (experimental)
+              <small>Libros cercanos a tus favoritos en un mapa de Google; Gemini elige los que encajan</small>
+            </span>
+            <input type="checkbox" role="switch" checked={ocean} onChange={(e) => setOcean(e.target.checked)} />
+          </label>
+        )}
+        <button
+          className="big"
+          disabled={busy || (source === "pending" && !pending)}
+          onClick={() => onRecommend({ type, source, wish, allTastes, ...(type === "book" && source !== "pending" && ocean && { ocean: true }) })}
+        >
           <IconSparkle /> Recomiéndame {PLURAL[type]}
         </button>
         <button className="ghost" onClick={onCopyProfile}>
@@ -103,6 +117,10 @@ export default function Recommend({ items, initialType, busy, onRecommend, onCop
               {timeAgo(run.at)}
               {run.request.wish.trim() && ` · «${run.request.wish.trim()}»`}
               {run.request.allTastes && " · basado en todos tus gustos"}
+              {run.map &&
+                (run.map.candidates
+                  ? ` · con el mapa (${run.map.candidates} libros cerca de ${run.map.anchors} de tus favoritos)`
+                  : " · el mapa no encontró libros cerca de tus favoritos")}
             </p>
           </div>
           {!run.recos.length && <p className="empty">No queda ninguna. Pide unas nuevas.</p>}
@@ -119,6 +137,7 @@ export default function Recommend({ items, initialType, busy, onRecommend, onCop
                       <strong>{r.title}</strong>
                       <span className="hint">{[r.originalTitle !== r.title && r.originalTitle, r.year, r.author].filter(Boolean).join(" · ")}</span>
                       {r.inPending && <span className="pill">En tus pendientes</span>}
+                      {r.fromMap && <span className="pill">Del mapa</span>}
                       <p className="reco-reason">{r.reason}</p>
                     </div>
                   </div>

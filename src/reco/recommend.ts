@@ -1,8 +1,10 @@
 import { getMeta, setMeta, type Stopper } from "../db";
 import type { Settings } from "../settings";
 import type { SyncResult } from "../sync";
-import type { Item, ItemType, Log } from "../types";
+import { isBookSource, type Item, type ItemType, type Log } from "../types";
 import { askGemini, buildPrompt, type Feedback, type RecoRequest } from "./gemini";
+import { findAnchors, fromMap, neighbors, titleKey, type Neighbor } from "./ocean";
+import { categoryProfile, label } from "./profile";
 import { recoId, verify, type Reco, type Verified } from "./verify";
 
 // Historial y últimas recomendaciones, en la tabla meta (sin cambiar el esquema de la base de datos).
@@ -16,6 +18,7 @@ export interface RecoRun {
   request: RecoRequest;
   recos: Reco[];
   dropped: Verified["dropped"];
+  map?: { anchors: number; candidates: number }; // si se usó el mapa: favoritos encontrados y libros propuestos
 }
 export type LastRuns = Partial<Record<ItemType, RecoRun>>;
 
@@ -44,15 +47,49 @@ export async function addFeedback(reco: Reco, kind: Feedback["kind"]) {
 
 const PLURAL: Record<ItemType, string> = { anime: "anime", manga: "manga", movie: "películas", book: "libros" };
 
-/** Perfil -> Gemini -> verificación; guarda el resultado y devuelve el resumen para el banner. */
+/** Se usa el mapa: libros, opción marcada y no solo de pendientes (el mapa propone libros nuevos). */
+export const usesMap = (req: RecoRequest) => req.type === "book" && !!req.ocean && req.source !== "pending";
+
+/**
+ * Candidatos de «An Ocean of Books»: los libros de otros autores más cerca de tus 8 libros favoritos.
+ * Si el mapa falla o no encuentra nada, se sigue sin él.
+ */
+async function mapCandidates(items: Item[], log: Log) {
+  const books = items.filter(isBookSource);
+  const favs = categoryProfile(items, "book")
+    .top.slice(0, 8)
+    .map((i) => ({ title: i.title, author: i.extra.author, label: label(i) }));
+  const mine = new Set(books.flatMap((i) => [i.title, ...(i.extra.altTitles ?? [])]).map(titleKey));
+  try {
+    log("Buscando tus libros favoritos en «An Ocean of Books»…");
+    const anchors = await findAnchors(favs);
+    const cands = anchors.length ? await neighbors(anchors, 6, (b) => mine.has(titleKey(b.title))) : [];
+    log(anchors.length ? `El mapa propone ${cands.length} libros cerca de ${anchors.length} de tus favoritos.` : "Ninguno de tus favoritos está en el mapa: se sigue sin él.");
+    return { anchors: anchors.length, cands };
+  } catch {
+    log("No se pudo consultar «An Ocean of Books»: se sigue sin el mapa.");
+    return { anchors: 0, cands: [] as Neighbor[] };
+  }
+}
+
+/** Perfil -> (mapa) -> Gemini -> verificación; guarda el resultado y devuelve el resumen para el banner. */
 export async function recomendar(items: Item[], req: RecoRequest, s: Settings, log: Log, stop: Stopper): Promise<SyncResult> {
   const feedback = await loadFeedback();
+  const map = usesMap(req) ? await mapCandidates(items, log) : null;
+  if (stop.stopped) return { text: "Recomendaciones canceladas" };
   log("Pidiendo recomendaciones a Gemini…");
-  const suggestions = await askGemini(s, buildPrompt(items, req, feedback), req.type);
+  const suggestions = await askGemini(s, buildPrompt(items, req, feedback, map?.cands), req.type);
   if (stop.stopped) return { text: "Recomendaciones canceladas" };
   log(`Gemini propone ${suggestions.length}; comprobando que existen…`);
   const v = await verify(items, suggestions, feedback, s, log, stop);
-  await saveRun({ at: new Date().toISOString(), request: req, recos: v.recos, dropped: v.dropped });
+  const recos = map?.cands.length ? v.recos.map((r) => (!r.inPending && fromMap(map.cands, [r.title, r.originalTitle], r.author) ? { ...r, fromMap: true } : r)) : v.recos;
+  await saveRun({
+    at: new Date().toISOString(),
+    request: req,
+    recos,
+    dropped: v.dropped,
+    ...(map && { map: { anchors: map.anchors, candidates: map.cands.length } }),
+  });
 
   const { seen, feedback: fb, unverified } = v.dropped;
   const out = [
@@ -60,5 +97,10 @@ export async function recomendar(items: Item[], req: RecoRequest, s: Settings, l
     fb && `${fb} de tu historial`,
     unverified.length && `${unverified.length} sin poder comprobar`,
   ].filter(Boolean);
-  return { text: `Recomendaciones de ${PLURAL[req.type]}: ${v.recos.length}${out.length ? ` (descartadas: ${out.join(", ")})` : ""}` };
+  const fromMapCount = recos.filter((r) => r.fromMap).length;
+  return {
+    text:
+      `Recomendaciones de ${PLURAL[req.type]}: ${recos.length}${out.length ? ` (descartadas: ${out.join(", ")})` : ""}` +
+      (map?.cands.length ? `; ${fromMapCount} del mapa` : ""),
+  };
 }
