@@ -23,11 +23,12 @@ import Data, { Counts } from "./ui/Data";
 import Detail from "./ui/Detail";
 import Home from "./ui/Home";
 import Recommend from "./ui/Recommend";
-import { IconBack, IconClose, IconData, IconPlus, IconRefresh, IconSettings, IconSparkle } from "./ui/icons";
+import Ruleta from "./ui/Ruleta";
+import { IconBack, IconClose, IconData, IconPlus, IconRefresh, IconSettings, IconSparkle, IconWheel } from "./ui/icons";
 import { PULL_THRESHOLD, usePullToRefresh } from "./ui/pull";
 import SettingsTab from "./ui/SettingsTab";
 
-const TITLE: Partial<Record<View["v"], string>> = { data: "Datos", settings: "Ajustes", reco: "Recomiéndame" };
+const TITLE: Partial<Record<View["v"], string>> = { data: "Datos", settings: "Ajustes", reco: "Recomiéndame", ruleta: "Ruleta de pelis" };
 
 type SyncFn = (s: Settings, log: Log, stop: Stopper) => Promise<SyncResult>;
 
@@ -140,6 +141,9 @@ export default function App() {
     }
     return c;
   }, [shown]);
+
+  // «Ver peli» solo sale si hay alguna película pendiente que sortear
+  const pendingMovies = useMemo(() => !!shown?.some((i) => i.type === "movie" && i.status === "plan"), [shown]);
 
   const run = async (fn: (stop: Stopper) => Promise<void>, canStop = false) => {
     stopper.current = { stopped: false };
@@ -322,6 +326,7 @@ export default function App() {
             onOpenItem={(r) => r.libraryKey && go({ v: "item", type: r.type, key: r.libraryKey })}
           />
         )}
+        {base.v === "ruleta" && <Ruleta items={shown ?? []} onOpen={(key) => go({ v: "item", type: "movie", key })} />}
         {base.v === "data" && (
           <div className="narrow">
             <Data
@@ -362,11 +367,16 @@ export default function App() {
         />
       )}
 
-      {/* Abajo, encima de la barra: «Añadir libro» y el aviso (que empuja el botón hacia arriba) */}
+      {/* Abajo, encima de la barra: «Añadir libro» o «Ver peli» y el aviso (que empuja el botón hacia arriba) */}
       <div className="floating">
         {catType === "book" && !isOverlay(view) && (
           <button className="fab book" onClick={() => go({ v: "book", type: "book" })}>
             <IconPlus /> Añadir libro
+          </button>
+        )}
+        {catType === "movie" && pendingMovies && !isOverlay(view) && (
+          <button className="fab movie" onClick={() => go({ v: "ruleta" })}>
+            <IconWheel /> Ver peli
           </button>
         )}
         {banner && (

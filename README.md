@@ -60,6 +60,13 @@ y reanudar.
 Al terminar, el Registro muestra cuántas portadas faltan por categoría. Si una
 imagen no carga, se ve un recuadro del color de la categoría con las iniciales.
 
+### Ruleta de pelis
+En Películas, el botón flotante **Ver peli** abre una ruleta con tus películas
+pendientes (la watchlist de Letterboxd). Si tienes más de 12, pone 12 al azar y
+«Otras pelis» cambia la selección. Al girarla se para en una al azar y enseña su
+póster, año, dirección, dónde verla en España y la sinopsis, con «Ver ficha» y
+«Girar otra vez». El botón solo sale si tienes alguna pendiente.
+
 ## Fase 2: recomendador
 **Recomiéndame** (tarjeta del inicio o icono ✦ de la cabecera, que abre la categoría
 en la que estás): eliges qué quieres (anime, manga, película o libro), de dónde (de
