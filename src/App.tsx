@@ -10,6 +10,7 @@ import { copyText } from "./lib/clipboard";
 import { addBook, BookInput, deleteBook, markAsRead, today, updateBook } from "./libros";
 import { fusionarManga } from "./merge";
 import { isOverlay, useNav, View } from "./nav";
+import { modelOf, modelSetting } from "./reco/gemini";
 import { profileForChat } from "./reco/profile";
 import { recomendar, updateSavedReco } from "./reco/recommend";
 import type { Reco } from "./reco/verify";
@@ -320,6 +321,12 @@ export default function App() {
             items={shown ?? []}
             initialType={base.type}
             busy={busy}
+            model={modelOf(settings)}
+            onModel={async (id) => {
+              const s = { ...settings, geminiModel: modelSetting(id) };
+              await saveSettings(s);
+              setSettings(s);
+            }}
             onRecommend={(req) => sync((s, log, stop) => recomendar(shown ?? [], req, s, log, stop))}
             onCopyProfile={copyProfile}
             onAddBook={addRecoBook}

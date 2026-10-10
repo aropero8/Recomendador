@@ -79,9 +79,13 @@ recomendaciones cruzadas.
    puntúas alto y tu media; títulos con autor, año o título original. Texto de
    unos 3.000 tokens como mucho.
 2. **Gemini** (`src/reco/gemini.ts`): con tu API key gratuita de Google AI Studio
-   (Ajustes) y el modelo `gemini-3.8-flash` por defecto. Pide la respuesta en
-   JSON con esquema: título, título original, año, autor, si es de tus
-   pendientes y por qué te lo recomienda, citando títulos tuyos parecidos.
+   (Ajustes). El modelo se elige en Ajustes o en el desplegable de Recomiéndame
+   entre los que tienen nivel gratuito: Gemini 3.8 Flash (por defecto), 3.6 Flash,
+   3.5 Flash-Lite, 3.1 Flash-Lite y 3 Flash (preview); con «Otro» se escribe el
+   nombre de cualquier otro. Cada modelo tiene su propio límite diario, así que
+   si agotas uno puedes seguir con otro. Pide la respuesta en JSON con esquema:
+   título, título original, año, autor, si es de tus pendientes y por qué te lo
+   recomienda, citando títulos tuyos parecidos.
 3. **Verificación** (`src/reco/verify.ts`): anime y manga en MAL, películas en
    TMDB y libros en Open Library. Solo se muestra lo que se encuentra con
    seguridad (título y año), con portada, enlace y sinopsis; se descarta lo que
@@ -103,8 +107,8 @@ fuera de los clásicos, la cercanía indica poco, y solo están los ~1.000 autor
 ~4.000 libros más conocidos, casi todos con su título en inglés. Si falla o no
 encuentra nada, se recomienda como siempre.
 
-Si llegas al límite gratuito de Gemini, **Copiar mi perfil** copia el perfil con
-unas instrucciones para pegarlo en cualquier chat de IA.
+Si llegas al límite gratuito de Gemini, cambia de modelo o usa **Copiar mi perfil**,
+que copia el perfil con unas instrucciones para pegarlo en cualquier chat de IA.
 
 ## Primeros pasos (en el PC)
     node --version        # necesita 20 o superior
