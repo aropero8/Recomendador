@@ -62,10 +62,16 @@ imagen no carga, se ve un recuadro del color de la categoría con las iniciales.
 
 ### Ruleta de pelis
 En Películas, el botón flotante **Ver peli** abre una ruleta con tus películas
-pendientes (la watchlist de Letterboxd). Si tienes más de 12, pone 12 al azar y
-«Otras pelis» cambia la selección. Al girarla se para en una al azar y enseña su
-póster, año, dirección, dónde verla en España y la sinopsis, con «Ver ficha» y
-«Girar otra vez». El botón solo sale si tienes alguna pendiente.
+pendientes (la watchlist de Letterboxd). Si tienes más de las que caben, pone unas
+cuantas al azar y «Otras pelis» cambia la selección. Al girarla se para en una al
+azar y enseña su póster, año, dirección, dónde verla en España y la sinopsis, con
+«Ver ficha» y «Girar otra vez». El botón solo sale si tienes alguna pendiente.
+
+El icono de los deslizadores (arriba a la derecha) abre **Personaliza la ruleta**
+(`src/ui/wheel.ts`): cuántas pelis lleva (de 2 a 24; 12 por defecto), el estilo
+(Cine, Arcoíris, Casino, Neón o Pastel), si cada porción lleva el póster o el título,
+la velocidad del giro (rápido, normal o con suspense) y un clic al pasar cada
+porción por la flecha. Se guarda en el dispositivo, como el tema.
 
 ## Fase 2: recomendador
 **Recomiéndame** (tarjeta del inicio o icono ✦ de la cabecera, que abre la categoría

@@ -107,7 +107,7 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
           )}
         </div>
         <p className="hint">
-          Todos son gratuitos con tu clave y cada uno tiene su propio límite diario: si agotas el de uno, puedes seguir con
+          Los de la lista tienen nivel gratuito y cada uno su propio límite diario: si agotas el de uno, puedes seguir con
           otro. También se cambia en Recomiéndame.
         </p>
         <label>
