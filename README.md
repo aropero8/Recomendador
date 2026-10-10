@@ -135,8 +135,12 @@ antes de `gradlew.bat`.
 En el móvil, «Exportar copia» y «Libros a Excel» abren «Compartir» para
 guardar el archivo en Drive, Descargas o mandarlo (en el navegador se descargan).
 
-Icono y pantalla de carga: `node scripts/icono.mjs` genera las imágenes de
-`assets/` y `npx @capacitor/assets generate --android` todos los tamaños.
+Icono y pantalla de carga: `node scripts/icono.mjs` dibuja el icono (un abanico de
+cuatro cartas con los colores de las categorías y un destello) y escribe los iconos
+de Android a su tamaño en cada densidad: el adaptativo, con capa monocroma para los
+iconos temáticos de Android 13, y los antiguos (cuadrado y redondo). También genera
+`assets/splash*.png`, y `npx @capacitor/assets generate --android` saca de ahí los
+tamaños de la pantalla de carga (no toca los iconos: en `assets/` no hay `icon-*.png`).
 
 ## Copias de seguridad
 La biblioteca vive en la base de datos del navegador (o de la app en Android):
