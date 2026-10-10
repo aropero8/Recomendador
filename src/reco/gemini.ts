@@ -7,9 +7,27 @@ import { label, profileText } from "./profile";
 // Recomendaciones con Gemini (API de Google AI Studio, nivel gratuito). Se envían tu perfil, tus
 // pendientes y los títulos que ya has visto o leído de la categoría; nada más (ver README).
 
-/** Modelo Flash estable con nivel gratuito (documentación de Google, octubre de 2026). Se puede cambiar en Ajustes. */
-export const DEFAULT_MODEL = "gemini-3.8-flash";
+/**
+ * Modelos de texto con nivel gratuito (documentación de Google, octubre de 2026), del más capaz al más ligero; se
+ * elige en Ajustes o en Recomiéndame. Cada uno tiene su propio límite diario. Fuera quedan los 2.5 (solo para quien
+ * ya los usaba) y Gemma (no admite instrucciones de sistema ni respuesta en JSON): se pueden poner en «Otro».
+ */
+export const FREE_MODELS = [
+  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", note: "El más capaz de los gratuitos (recomendado)" },
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", note: "La generación anterior de Flash" },
+  { id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash-Lite", note: "Más rápido y ligero, algo menos fino" },
+  { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", note: "Ligero y más antiguo; Google lo retira en mayo de 2027" },
+  { id: "gemini-3-flash-preview", name: "Gemini 3 Flash (preview)", note: "Versión preliminar de la generación 3" },
+];
+export const DEFAULT_MODEL = FREE_MODELS[0].id;
 const API = "https://generativelanguage.googleapis.com/v1beta/models";
+
+/** El modelo elegido: vacío en Ajustes es el de por defecto (así cambia con la app). */
+export const modelOf = (s: Settings) => s.geminiModel.trim() || DEFAULT_MODEL;
+/** Lo que se guarda en Ajustes al elegir `id`. */
+export const modelSetting = (id: string) => (id === DEFAULT_MODEL ? "" : id);
+/** «Gemini 3.8 Flash», o el nombre tal cual si es otro modelo. */
+export const modelName = (id: string) => FREE_MODELS.find((m) => m.id === id)?.name ?? id;
 
 export type RecoSource = "pending" | "new" | "both";
 
@@ -135,12 +153,14 @@ async function apiError(r: Response, model: string): Promise<Error> {
     // Límite por minuto (esperar un poco) o diario (hasta mañana)
     if (/PerMinute/i.test(text) && !/PerDay/i.test(text))
       return new GeminiQuota("Demasiadas peticiones seguidas a Gemini: espera un minuto y vuelve a probar.");
-    return new GeminiQuota("Has llegado al límite gratuito de hoy, prueba mañana o usa «Copiar mi perfil».");
+    return new GeminiQuota(
+      `Has llegado al límite gratuito de hoy de ${modelName(model)}. Cada modelo tiene el suyo: elige otro, prueba mañana o usa «Copiar mi perfil».`,
+    );
   }
   if (/API_KEY_INVALID|API key not valid/i.test(text) || r.status === 401)
     return new MissingSettings("Gemini rechaza la API key. Revísala en Ajustes.");
   if (r.status === 404)
-    return new MissingSettings(`El modelo «${model}» no existe o ya no está disponible. Cámbialo en Ajustes (o déjalo vacío para usar ${DEFAULT_MODEL}).`);
+    return new MissingSettings(`El modelo «${model}» no existe o ya no está disponible con tu clave. Elige otro en Ajustes.`);
   if (r.status === 403) return new MissingSettings(`Gemini no permite usar esta API key (${err.message ?? "403"}). Revísala en Ajustes.`);
   if (r.status >= 500) return new Error(`Gemini no responde ahora mismo (${r.status}). Prueba en un momento.`);
   return new Error(`Gemini responde ${r.status}: ${err.message ?? "error desconocido"}`);
@@ -150,7 +170,7 @@ async function apiError(r: Response, model: string): Promise<Error> {
 export async function askGemini(s: Settings, prompt: string, type: ItemType): Promise<Suggestion[]> {
   const key = s.geminiKey.trim();
   if (!key) throw new MissingSettings("Para pedir recomendaciones falta en Ajustes: API key de Gemini (gratuita en Google AI Studio).");
-  const model = s.geminiModel.trim() || DEFAULT_MODEL;
+  const model = modelOf(s);
   let r: Response;
   try {
     r = await fetch(`${API}/${encodeURIComponent(model)}:generateContent`, {

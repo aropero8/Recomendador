@@ -454,6 +454,20 @@ label.file { font-weight: 500; }
 .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; background: var(--surface-2); border-radius: 999px; }
 .segmented button { background: transparent; color: var(--muted); padding: 10px 6px; font-size: 0.9rem; white-space: nowrap; }
 .segmented button.on { background: var(--accent); color: var(--on-accent); }
+/* Lista de opciones con una nota debajo de cada una (modelo de Gemini) */
+.choices { display: flex; flex-direction: column; gap: 6px; }
+.choice {
+  justify-content: flex-start; gap: 12px; padding: 11px 14px; border-radius: 14px; background: var(--bg); color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line); text-align: left; font-weight: 600; font-size: 0.95rem;
+}
+.choice::before {
+  content: ""; flex: none; width: 20px; height: 20px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--muted);
+  transition: border-width 0.12s, border-color 0.12s;
+}
+.choice.on { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
+.choice.on::before { border: 6px solid var(--accent); }
+.choice span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.choice small { color: var(--muted); font-size: 0.8rem; font-weight: 400; line-height: 1.3; }
 
 /* ---------- libros: añadir y editar ---------- */
 .detail.sheet { display: flex; flex-direction: column; }
@@ -509,6 +523,8 @@ textarea { resize: vertical; min-height: 64px; }
 .switch-row input:checked { background: var(--accent); border-color: var(--accent); }
 .switch-row input:checked::before { transform: translateX(20px); background: var(--on-accent); }
 button.big { padding: 15px 20px; font-size: 1.02rem; }
+.model-row { flex-direction: row; align-items: center; justify-content: center; gap: 2px; margin: -6px 0 -4px; }
+.model-row select { width: auto; border: 0; background: transparent; padding: 6px 2px 6px 4px; font-size: 0.9rem; font-weight: 600; color: var(--ink); box-shadow: none; }
 
 .reco-results h2 { margin-bottom: 2px; }
 .reco-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
@@ -533,38 +549,69 @@ a.button-link svg { width: 16px; height: 16px; }
 /* ---------- ruleta de pelis ---------- */
 .ruleta { gap: 16px; }
 .ruleta .text-btn:disabled svg { animation: none; }
+.ruleta-actions { display: flex; align-items: center; flex: none; }
+/* Colores de cada estilo (wheel.ts): borde, separadores, clavijas, flecha, marco de los pósters y halo de los títulos */
+.wheel, .wheel-look {
+  --rim: color-mix(in srgb, var(--movie) 65%, #000); --edge: var(--surface); --peg: var(--surface); --pointer: var(--ink);
+  --ring: rgba(255, 255, 255, 0.85); --halo: rgba(0, 0, 0, 0.35); --glow: transparent;
+}
+.look-arcoiris { --rim: #2a2833; --halo: transparent; }
+.look-casino { --rim: #9c7130; --edge: #e2c06b; --peg: #f6dc8c; --ring: #f6dc8c; --halo: transparent; }
+.look-neon { --rim: #2ee6ff; --edge: #ff5ad9; --peg: #ff5ad9; --ring: #2ee6ff; --halo: transparent; --glow: rgba(46, 230, 255, 0.55); }
+.look-pastel { --rim: #d9ccf5; --edge: #fff; --peg: #fff; --ring: #fff; --halo: transparent; }
 .wheel { position: relative; width: min(100%, 380px); aspect-ratio: 1; margin: 12px auto 0; }
+/* El borde no gira y recorta el disco: girado, su caja cuadrada se salía por los lados y la página se movía en horizontal */
+.wheel-face {
+  position: absolute; inset: 0; border-radius: 50%; overflow: hidden;
+  box-shadow: 0 0 0 6px var(--rim), 0 0 24px 4px var(--glow), var(--shadow-2);
+}
 .wheel-disc {
   position: absolute; inset: 0; border-radius: 50%; will-change: transform;
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--movie) 65%, #000), var(--shadow-2);
-  transition: transform 4.8s cubic-bezier(0.12, 0.7, 0.08, 1); /* SPIN_MS en Ruleta.tsx */
+  transition: transform 4.8s cubic-bezier(0.12, 0.7, 0.08, 1); /* la duración, según la velocidad elegida (wheel.ts) */
 }
 .wheel-disc > svg { display: block; width: 100%; height: 100%; border-radius: 50%; }
-.wheel-slice { stroke: var(--surface); stroke-width: 0.8; transition: opacity 0.3s; }
-.wheel-slice.s0 { fill: var(--movie); }
-.wheel-slice.s1 { fill: color-mix(in srgb, var(--movie) 60%, var(--surface)); }
-.wheel-slice.s2 { fill: color-mix(in srgb, var(--movie) 75%, #000); }
-.wheel-peg { fill: var(--surface); }
+.wheel-backdrop { fill: #0d0c12; } /* al pararse, las porciones apagadas se oscurecen (también en el tema claro) */
+.wheel-slice { stroke: var(--edge); stroke-width: 0.8; transition: opacity 0.3s; }
+.look-neon .wheel-slice { stroke-width: 1.4; }
+.wheel-peg { fill: var(--peg); }
+.wheel-label {
+  font-family: var(--font-ui); font-weight: 700; paint-order: stroke; stroke: var(--halo); stroke-width: 1.4px; stroke-linejoin: round;
+  transition: opacity 0.3s;
+}
 .wheel-spoke { position: absolute; inset: 0; pointer-events: none; }
 .wheel-poster {
-  position: absolute; top: 5%; left: 44%; width: 12%; aspect-ratio: 2 / 3; border-radius: 4px; overflow: hidden;
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85), 0 2px 6px rgba(0, 0, 0, 0.35); transition: opacity 0.3s, transform 0.3s;
+  position: absolute; top: 5%; left: calc(50% - var(--pw) / 2); width: var(--pw); aspect-ratio: 2 / 3; border-radius: 4px; overflow: hidden;
+  box-shadow: 0 0 0 1.5px var(--ring), 0 2px 6px rgba(0, 0, 0, 0.35); transition: opacity 0.3s, transform 0.3s;
 }
-.wheel-disc.few .wheel-poster { left: 42%; width: 16%; } /* con 6 porciones o menos cabe uno más grande */
 .wheel-poster .cover.ph span { font-size: 0.75rem; }
 /* Al pararse: la ganadora destaca y el resto se apaga */
-.wheel-disc.done .wheel-slice:not(.won), .wheel-disc.done .wheel-spoke:not(.won) .wheel-poster { opacity: 0.4; }
+.wheel-disc.done .wheel-slice:not(.won), .wheel-disc.done .wheel-label:not(.won), .wheel-disc.done .wheel-spoke:not(.won) .wheel-poster { opacity: 0.4; }
 .wheel-spoke.won .wheel-poster { transform: scale(1.18); }
 .wheel-pointer {
   position: absolute; top: -14px; left: 50%; z-index: 1; width: 28px; height: 34px; margin-left: -14px;
-  fill: var(--ink); stroke: var(--surface); stroke-width: 2; stroke-linejoin: round; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+  fill: var(--pointer); stroke: var(--surface); stroke-width: 2; stroke-linejoin: round; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
 }
 .wheel-hub {
   position: absolute; inset: 38%; padding: 0; border-radius: 50%; background: var(--surface); color: var(--accent);
-  box-shadow: 0 0 0 5px color-mix(in srgb, var(--movie) 65%, #000), var(--shadow-2);
+  box-shadow: 0 0 0 5px var(--rim), 0 0 14px 2px var(--glow), var(--shadow-2);
   font-size: clamp(0.8rem, 3.6vw, 0.95rem); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
 }
+.look-neon .wheel-hub { background: #120e24; color: #2ee6ff; }
+.look-casino .wheel-hub { background: #1c1c22; color: #f6dc8c; }
 .wheel-hub:disabled { opacity: 1; color: var(--muted); }
+/* Personalizar */
+.wheel-looks { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.wheel-look {
+  flex-direction: column; gap: 8px; padding: 12px 2px 9px; border-radius: 14px; background: transparent; color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line); font-weight: 500; font-size: 0.78rem; white-space: nowrap;
+}
+.wheel-look.on { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); font-weight: 700; }
+.wheel-look-disc { width: 38px; height: 38px; border-radius: 50%; box-shadow: 0 0 0 3px var(--rim), 0 0 10px var(--glow); }
+.segmented.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.range-row { gap: 2px; }
+.range-row span { display: flex; justify-content: space-between; align-items: baseline; }
+.range-row b { color: var(--ink); font-size: 1rem; font-variant-numeric: tabular-nums; }
+.range-row input[type="range"] { padding: 0; height: 32px; border: 0; background: transparent; box-shadow: none; accent-color: var(--accent); }
 .ruleta-result { display: flex; flex-direction: column; gap: 12px; scroll-margin-bottom: 16px; }
 .ruleta-card {
   display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 12px; border-radius: 18px;

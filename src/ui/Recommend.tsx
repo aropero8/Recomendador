@@ -1,7 +1,7 @@
 import { liveQuery } from "dexie";
 import { useEffect, useState } from "react";
 import { db } from "../db";
-import type { RecoRequest, RecoSource } from "../reco/gemini";
+import { FREE_MODELS, type RecoRequest, type RecoSource } from "../reco/gemini";
 import { addFeedback, type LastRuns } from "../reco/recommend";
 import type { Reco } from "../reco/verify";
 import { timeAgo } from "../sync";
@@ -22,6 +22,8 @@ interface Props {
   items: Item[]; // tu biblioteca tal como se muestra
   initialType?: ItemType;
   busy: boolean;
+  model: string; // el modelo de Gemini elegido (también en Ajustes)
+  onModel: (id: string) => void;
   onRecommend: (req: RecoRequest) => void;
   onCopyProfile: () => void;
   onAddBook: (r: Reco) => void;
@@ -39,7 +41,7 @@ function addLink(r: Reco): [string, string] | null {
 }
 
 /** «Recomiéndame»: qué quieres, de dónde y lo que te apetece; debajo, las últimas recomendaciones de esa categoría. */
-export default function Recommend({ items, initialType, busy, onRecommend, onCopyProfile, onAddBook, onOpenItem }: Props) {
+export default function Recommend({ items, initialType, busy, model, onModel, onRecommend, onCopyProfile, onAddBook, onOpenItem }: Props) {
   const [type, setType] = useState<ItemType>(initialType ?? "book");
   const [source, setSource] = useState<RecoSource>("both");
   const [wish, setWish] = useState("");
@@ -103,6 +105,17 @@ export default function Recommend({ items, initialType, busy, onRecommend, onCop
         >
           <IconSparkle /> Recomiéndame {PLURAL[type]}
         </button>
+        <label className="model-row">
+          Modelo
+          <select value={model} onChange={(e) => onModel(e.target.value)}>
+            {FREE_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+            {!FREE_MODELS.some((m) => m.id === model) && <option value={model}>{model}</option>}
+          </select>
+        </label>
         <button className="ghost" onClick={onCopyProfile}>
           Copiar mi perfil
         </button>

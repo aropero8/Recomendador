@@ -1,5 +1,5 @@
 import { ChangeEvent, useState } from "react";
-import { DEFAULT_MODEL } from "../reco/gemini";
+import { FREE_MODELS, modelOf, modelSetting } from "../reco/gemini";
 import type { Settings } from "../settings";
 import { loadTheme, saveTheme, Theme } from "../theme";
 
@@ -12,6 +12,8 @@ const THEMES: [Theme, string][] = [
 export default function SettingsTab({ settings, onSave }: { settings: Settings; onSave: (s: Settings) => Promise<void> }) {
   const [s, setS] = useState(settings);
   const [theme, setTheme] = useState(loadTheme);
+  // «Otro»: un modelo que no está en la lista
+  const [custom, setCustom] = useState(() => !FREE_MODELS.some((m) => m.id === modelOf(settings)));
   const set = (k: keyof Settings) => (e: ChangeEvent<HTMLInputElement>) => setS({ ...s, [k]: e.target.value });
   const changed = (Object.keys(s) as (keyof Settings)[]).some((k) => s[k] !== settings[k]);
   const field = { autoCapitalize: "none", autoCorrect: "off", autoComplete: "off", spellCheck: false } as const;
@@ -61,13 +63,52 @@ export default function SettingsTab({ settings, onSave }: { settings: Settings; 
           API key de Gemini (recomendaciones)
           <input value={s.geminiKey} onChange={set("geminiKey")} type="password" {...field} />
         </label>
-        <label>
+        <p className="hint">La clave de Gemini es gratuita: créala en Google AI Studio (aistudio.google.com, «Get API key»).</p>
+        <div className="field">
           Modelo de Gemini
-          <input value={s.geminiModel} onChange={set("geminiModel")} placeholder={DEFAULT_MODEL} {...field} />
-        </label>
+          <div className="choices" role="radiogroup" aria-label="Modelo de Gemini">
+            {FREE_MODELS.map((m) => {
+              const on = !custom && modelOf(s) === m.id;
+              return (
+                <button
+                  key={m.id}
+                  role="radio"
+                  aria-checked={on}
+                  className={`choice ${on ? "on" : ""}`}
+                  onClick={() => {
+                    setCustom(false);
+                    setS({ ...s, geminiModel: modelSetting(m.id) });
+                  }}
+                >
+                  <span>
+                    {m.name}
+                    <small>{m.note}</small>
+                  </span>
+                </button>
+              );
+            })}
+            <button
+              role="radio"
+              aria-checked={custom}
+              className={`choice ${custom ? "on" : ""}`}
+              onClick={() => {
+                if (!custom) setS({ ...s, geminiModel: "" });
+                setCustom(true);
+              }}
+            >
+              <span>
+                Otro
+                <small>El nombre exacto de otro modelo de la API</small>
+              </span>
+            </button>
+          </div>
+          {custom && (
+            <input value={s.geminiModel} onChange={set("geminiModel")} placeholder="p. ej. gemini-2.5-flash" aria-label="Nombre del modelo" {...field} />
+          )}
+        </div>
         <p className="hint">
-          La clave de Gemini es gratuita: créala en Google AI Studio (aistudio.google.com, «Get API key»). Deja el modelo
-          vacío para usar {DEFAULT_MODEL}.
+          Los de la lista tienen nivel gratuito y cada uno su propio límite diario: si agotas el de uno, puedes seguir con
+          otro. También se cambia en Recomiéndame.
         </p>
         <label>
           Pestañas de «Sin leer» a usar (vacío = todas)
