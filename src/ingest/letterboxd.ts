@@ -26,8 +26,21 @@ async function csv(zip: JSZip, name: string): Promise<Row[]> {
   return Papa.parse<Row>(await f.async("string"), { header: true, skipEmptyLines: true }).data;
 }
 
+const releaseYear = (r: any) => parseInt(String(r.release_date ?? "").slice(0, 4), 10) || null;
+
+/**
+ * Busca en TMDB por título y año (el ZIP de Letterboxd no trae el id). Solo acepta resultados del
+ * mismo año (±1, por los estrenos en festivales) y entre ellos prefiere el de título idéntico: quedarse
+ * con el primero sin más podía dar otra película que se llama igual.
+ */
 async function findMovie(key: string, title: string, year: number | null) {
-  for (const p of [{ query: title, year: year ?? undefined }, { query: title }]) {
+  const n = norm(title);
+  const sameTitle = (r: any) => norm(r.title) === n || norm(r.original_title) === n;
+  const nearYear = (r: any) => {
+    const y = releaseYear(r);
+    return year == null || (y != null && Math.abs(y - year) <= 1);
+  };
+  for (const p of year ? [{ query: title, primary_release_year: year }, { query: title }] : [{ query: title }]) {
     let js: any;
     try {
       js = await getJson(`${T}/search/movie?${qs({ api_key: key, ...p })}`, { delay: 60, strict: true });
@@ -35,11 +48,15 @@ async function findMovie(key: string, title: string, year: number | null) {
       if (e instanceof HttpError && e.status === 401) throw new Error("TMDB rechaza la API key. Revísala en Ajustes.");
       throw e;
     }
-    const r = js?.results?.[0];
+    const ok = ((js?.results ?? []) as any[]).filter(nearYear);
+    const r = ok.find(sameTitle) ?? ok[0];
     if (r) return r.id as number;
   }
   return null;
 }
+
+/** El id de TMDB vino de Letterboxd (RSS) y es seguro; el de findMovie es una búsqueda por título y puede fallar. */
+const idFromLb = (i: Item) => i.key.startsWith("movie:lb:tmdb") || !!i.extra.tmdbLb;
 
 /** Lee el ZIP y guarda todas las películas de golpe; los datos de TMDB se completan después. */
 export async function importLetterboxd(file: File, log: Log) {
@@ -148,7 +165,8 @@ export async function leerRss(user: string): Promise<RssFilm[]> {
 
 /**
  * Aplica el RSS: añade las películas nuevas, actualiza la nota de las que ya estén y pasa a vistas
- * las que estuvieran en la watchlist. No toca sinopsis, géneros ni portadas.
+ * las que estuvieran en la watchlist. No toca sinopsis, géneros ni portadas, salvo en las que la
+ * búsqueda por título había confundido con otra película: esas se vacían (fixed) para volver a completarlas.
  */
 export async function actualizarDesdeRss(user: string, log: Log) {
   const films = await leerRss(user);
@@ -158,9 +176,12 @@ export async function actualizarDesdeRss(user: string, log: Log) {
   const byTitle = new Map(all.map((i) => [titleYear(i.title, i.extra.year), i]));
   const changes = noChanges();
   const added: string[] = [];
+  const fixed: string[] = [];
   const out: Item[] = [];
   for (const f of films) {
-    const o = byTmdb.get(f.tmdbId) ?? byTitle.get(titleYear(f.title, f.year));
+    // Por título solo si su id no vino ya de Letterboxd: si vino y es otro, son películas distintas que se llaman igual
+    const t = byTitle.get(titleYear(f.title, f.year));
+    const o = byTmdb.get(f.tmdbId) ?? (t && !idFromLb(t) ? t : undefined);
     if (!o) {
       const key = `movie:lb:tmdb${f.tmdbId}`;
       added.push(key);
@@ -177,8 +198,15 @@ export async function actualizarDesdeRss(user: string, log: Log) {
       });
       continue;
     }
-    const upd: Item = { ...o, extra: { ...o.extra, tmdbId: o.extra.tmdbId ?? f.tmdbId, liked: f.liked || !!o.extra.liked } };
-    let changed = upd.extra.tmdbId !== o.extra.tmdbId || upd.extra.liked !== !!o.extra.liked;
+    // El id del RSS manda sobre el que se adivinó buscando por título
+    const upd: Item = { ...o, extra: { ...o.extra, tmdbId: f.tmdbId, tmdbLb: true, liked: f.liked || !!o.extra.liked } };
+    let changed = upd.extra.tmdbId !== o.extra.tmdbId || !o.extra.tmdbLb || upd.extra.liked !== !!o.extra.liked;
+    if (o.extra.tmdbId && o.extra.tmdbId !== f.tmdbId) {
+      const { director, cast, providersEs, ...extra } = upd.extra;
+      Object.assign(upd, { synopsis: "", genres: [], cover: undefined, extra: { ...extra, tmdbDone: false, posterChecked: false } });
+      fixed.push(o.key);
+      log(`películas: «${o.title}» estaba enlazada a otra película de TMDB; se corrige`);
+    }
     if (f.rating != null && f.rating !== o.userScore) {
       upd.userScore = f.rating;
       changes.scores++;
@@ -197,7 +225,7 @@ export async function actualizarDesdeRss(user: string, log: Log) {
   }
   await putInBatches(out);
   changes.added = added.length;
-  return { changes, added };
+  return { changes, added, fixed };
 }
 
 const poster = (path?: string | null) => (path ? `https://image.tmdb.org/t/p/w342${path}` : undefined);
