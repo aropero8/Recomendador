@@ -25,16 +25,17 @@ export async function actualizarAnimeManga(s: Settings, log: Log, stop: Stopper)
   return { text: `Anime y manga: ${summary(changes)}` };
 }
 
-/** Películas: lee el RSS de Letterboxd, aplica los cambios y completa con TMDB solo las nuevas. */
+/** Películas: lee el RSS de Letterboxd, aplica los cambios y completa con TMDB solo las nuevas (y las corregidas). */
 export async function actualizarPeliculas(s: Settings, log: Log, stop: Stopper): Promise<SyncResult> {
   missing("películas", [["usuario de Letterboxd", !!s.letterboxdUser.trim()]]);
-  const { changes, added } = await actualizarDesdeRss(s.letterboxdUser, log);
+  const { changes, added, fixed } = await actualizarDesdeRss(s.letterboxdUser, log);
   await markSynced("letterboxd");
-  const text = `Películas: ${summary(changes, true)}`;
-  if (!added.length) return { text };
+  const n = fixed.length;
+  const text = `Películas: ${summary(changes, true)}${n ? `, ${n} ${n === 1 ? "corregida" : "corregidas"} (era otra película con el mismo título)` : ""}`;
+  if (!added.length && !n) return { text };
   if (!s.tmdbKey.trim())
     return { text: `${text}. Falta la API key de TMDB en Ajustes: las nuevas se quedan sin sinopsis ni póster.`, goSettings: true };
-  await completarPeliculas(s.tmdbKey, log, stop, new Set(added));
+  await completarPeliculas(s.tmdbKey, log, stop, new Set([...added, ...fixed]));
   return { text };
 }
 
