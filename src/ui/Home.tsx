@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Item, ItemType, ITEM_TYPES, TYPE_LABEL } from "../types";
+import { inProgress, Item, ItemType, ITEM_TYPES, TYPE_LABEL } from "../types";
 import Cover from "./Cover";
 import { progress, scoreText, titles, when } from "./format";
 import { IconChevron, IconData, IconSettings, IconSparkle } from "./icons";
@@ -39,7 +39,7 @@ export default function Home({ items, openCategory, openItem, openData, openSett
   const shelves = useMemo(() => {
     const xs = items ?? [];
     return [
-      { title: "Continúa", items: xs.filter((i) => i.status === "reading").sort(byRecent).slice(0, 20) },
+      { title: "Continúa", items: xs.filter(inProgress).sort(byRecent).slice(0, 20) },
       { title: "Terminado hace poco", items: xs.filter((i) => i.status === "read" && when(i)).sort(byRecent).slice(0, 20) },
     ].filter((s) => s.items.length);
   }, [items]);
@@ -119,7 +119,7 @@ export default function Home({ items, openCategory, openItem, openData, openSett
                     <div className="card-cover">
                       <Cover item={i} />
                       {i.userScore != null && <span className="badge">{scoreText(i.userScore)}</span>}
-                      {i.status === "reading" && p != null && (
+                      {inProgress(i) && p != null && (
                         <span className="bar" aria-label={`${Math.round(p * 100)} %`}>
                           <span style={{ width: `${p * 100}%` }} />
                         </span>

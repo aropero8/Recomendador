@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Settings } from "../settings";
 import { today } from "../libros";
-import { isBookSource, Item, STATUS_LABEL, TYPE_LABEL } from "../types";
+import { AGAIN_LABEL, isAgain, isBookSource, Item, STATUS_LABEL, TYPE_LABEL } from "../types";
 import Cover from "./Cover";
 import CoverPicker from "./CoverPicker";
 import { scoreText } from "./format";
@@ -161,6 +161,7 @@ export default function Detail({ item, settings, onBack, onEdit, onMarkRead, onD
                   </span>
                 )}
                 <span className={`status-pill ${item.status}`}>{STATUS_LABEL[item.status]}</span>
+                {isAgain(item) && <span className="status-pill again">{AGAIN_LABEL[item.type]}</span>}
               </p>
             </div>
 
