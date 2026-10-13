@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { norm } from "../lib/text";
-import { Item, ItemType, Status, TYPE_LABEL } from "../types";
+import { AGAIN_LABEL, inProgress, isAgain, Item, ItemType, Status, TYPE_LABEL } from "../types";
 import Cover from "./Cover";
 import { progress, scoreText, titles, when } from "./format";
 import { IconRefresh, IconSearch, IconSort } from "./icons";
 
-const STATUS_FILTERS: [Status | "all", string][] = [
+type Filter = Status | "all" | "again"; // again: volviendo a ver o releyendo (solo anime y manga)
+const STATUS_FILTERS: [Filter, string][] = [
   ["all", "Todo"],
   ["read", "Terminado"],
   ["reading", "En curso"],
   ["plan", "Pendiente"],
 ];
+const matches = (i: Item, f: Filter) => f === "all" || (f === "again" ? isAgain(i) : i.status === f);
 type Sort = "score" | "title" | "recent";
 const SORTS: [Sort, string][] = [
   ["score", "Mejor nota"],
@@ -35,15 +37,20 @@ interface Props {
 
 export default function Category({ items, type, onOpen, update, openData }: Props) {
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<Status | "all">("all");
+  const [status, setStatus] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("score");
   const [limit, setLimit] = useState(PAGE);
   const sentinel = useRef<HTMLDivElement>(null);
 
   const all = useMemo(() => items.filter((i) => i.type === type), [items, type]);
+  const filters = useMemo<[Filter, string][]>(() => {
+    const again = AGAIN_LABEL[type];
+    return again ? [...STATUS_FILTERS.slice(0, 3), ["again", again], ...STATUS_FILTERS.slice(3)] : STATUS_FILTERS;
+  }, [type]);
+  useEffect(() => setStatus((s) => (filters.some(([f]) => f === s) ? s : "all")), [filters]);
   const shown = useMemo(() => {
     const q = norm(query);
-    const xs = all.filter((i) => (status === "all" || i.status === status) && (!q || norm(i.title).includes(q)));
+    const xs = all.filter((i) => matches(i, status) && (!q || norm(i.title).includes(q)));
     const byTitle = (a: Item, b: Item) => a.title.localeCompare(b.title, "es");
     return xs.sort(
       sort === "title"
@@ -67,8 +74,11 @@ export default function Category({ items, type, onOpen, update, openData }: Prop
 
   // Cuántos hay de cada estado, para las pestañas
   const byStatus = useMemo(() => {
-    const c: Partial<Record<Status | "all", number>> = { all: all.length };
-    for (const i of all) c[i.status] = (c[i.status] ?? 0) + 1;
+    const c: Partial<Record<Filter, number>> = { all: all.length };
+    for (const i of all) {
+      c[i.status] = (c[i.status] ?? 0) + 1;
+      if (isAgain(i)) c.again = (c.again ?? 0) + 1;
+    }
     return c;
   }, [all]);
 
@@ -101,7 +111,7 @@ export default function Category({ items, type, onOpen, update, openData }: Prop
       </label>
 
       <div className="chips scroll" role="group" aria-label="Estado">
-        {STATUS_FILTERS.map(([s, label]) => (
+        {filters.map(([s, label]) => (
           <button key={s} className={`chip ${status === s ? "on" : ""}`} aria-pressed={status === s} onClick={() => setStatus(s)}>
             {label}
             <span className="chip-n">{byStatus[s] ?? 0}</span>
@@ -156,7 +166,7 @@ export default function Category({ items, type, onOpen, update, openData }: Prop
       ) : (
         <ul className="grid">
           {shown.slice(0, limit).map((i) => {
-            const p = i.status === "reading" ? progress(i) : null;
+            const p = inProgress(i) ? progress(i) : null;
             return (
               <li key={i.key}>
                 <button className="card" onClick={() => onOpen(i.key)}>

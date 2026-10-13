@@ -84,6 +84,7 @@ function toItem(kind: "anime" | "manga", { node: m, list_status: ls }: any): Ite
       altTitles: [...new Set([m.title, alt.en, alt.ja, ...(alt.synonyms ?? [])].filter(Boolean))],
       date: ls?.finish_date ?? ls?.updated_at,
       progress: progress(kind, m, ls),
+      rewatching: !!(kind === "anime" ? ls?.is_rewatching : ls?.is_rereading), // en MAL sigue como «Completed»
       coverChecked: true, // ya se pidió main_picture (lo que falte lo vuelve a pedir «Descargar portadas»)
     },
     cover: malPicture(m),
@@ -112,7 +113,8 @@ export async function actualizarMal(user: string, clientId: string, log: Log) {
         continue;
       }
       if (o.userScore !== it.userScore) changes.scores++;
-      if (o.status !== it.status) changes.statuses++;
+      // (los guardados antes de leer la marca de volver a ver no cuentan como cambio)
+      if (o.status !== it.status || ("rewatching" in o.extra && o.extra.rewatching !== it.extra.rewatching)) changes.statuses++;
       // (los guardados antes de leer el progreso no cuentan como cambio)
       if (o.extra.progress && JSON.stringify(o.extra.progress) !== JSON.stringify(it.extra.progress)) changes.progress++;
     }

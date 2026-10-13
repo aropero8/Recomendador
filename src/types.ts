@@ -31,6 +31,12 @@ export const TYPE_LABEL: Record<ItemType, string> = {
   book: "Libros",
 };
 
+/** Anime que vuelves a ver o manga que relees (la marca «Rewatching» / «Re-reading» de MAL). */
+export const AGAIN_LABEL: Partial<Record<ItemType, string>> = { anime: "Volviendo a ver", manga: "Releyendo" };
+export const isAgain = (i: Item) => !!i.extra.rewatching;
+/** A medias: en curso o volviendo a ver o leer. */
+export const inProgress = (i: Item) => i.status === "reading" || isAgain(i);
+
 export const ITEM_TYPES: ItemType[] = ["anime", "manga", "movie", "book"];
 
 /** Libros y mangas en papel: los del Excel y los apuntados en la app. */
