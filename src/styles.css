@@ -333,6 +333,15 @@ main.book, main.movie { padding-bottom: 104px; } /* hueco para «Añadir libro»
 }
 .chip.on { background: var(--c, var(--accent)); color: var(--on-cat); box-shadow: none; font-weight: 600; }
 .chip-n { font-size: 0.78rem; font-variant-numeric: tabular-nums; opacity: 0.7; }
+.author-filter { position: relative; flex-direction: row; align-items: center; color: var(--muted); }
+.author-filter svg { position: absolute; left: 13px; width: 18px; height: 18px; pointer-events: none; }
+.author-filter select {
+  height: 40px; padding: 0 12px 0 40px; border-radius: 10px; border-color: var(--line); background: transparent;
+  font-size: 0.9rem; font-weight: 500; color: var(--ink); text-overflow: ellipsis;
+}
+.author-filter.on { color: var(--on-cat); }
+.author-filter.on select { background: var(--c, var(--accent)); border-color: transparent; color: var(--on-cat); font-weight: 600; }
+.author-filter option { background: var(--surface); color: var(--ink); font-weight: 500; }
 .summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 36px; }
 .sort { flex: none; flex-direction: row; align-items: center; gap: 2px; color: var(--muted); }
 .sort svg { width: 16px; height: 16px; }
