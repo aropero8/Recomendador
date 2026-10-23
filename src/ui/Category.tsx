@@ -3,7 +3,7 @@ import { norm } from "../lib/text";
 import { AGAIN_LABEL, inProgress, isAgain, Item, ItemType, Status, TYPE_LABEL } from "../types";
 import Cover from "./Cover";
 import { progress, scoreText, titles, when } from "./format";
-import { IconRefresh, IconSearch, IconSort } from "./icons";
+import { IconRefresh, IconSearch, IconSort, IconUser } from "./icons";
 
 type Filter = Status | "all" | "again"; // again: volviendo a ver o releyendo (solo anime y manga)
 const STATUS_FILTERS: [Filter, string][] = [
@@ -20,6 +20,10 @@ const SORTS: [Sort, string][] = [
   ["recent", "Recientes"],
 ];
 const PAGE = 60; // portadas que se añaden cada vez que se llega al final
+
+/** Autores de un libro («A / B» son dos) y la clave para agruparlos («J.R.R. Tolkien» = «J. R. R. Tolkien»). */
+const authorsOf = (i: Item) => String(i.extra.author ?? "").split("/").map((a) => a.trim()).filter(Boolean);
+const authorKey = (a: string) => norm(a).replace(/[^a-z0-9]/g, "");
 
 interface Props {
   items: Item[];
@@ -38,6 +42,7 @@ interface Props {
 export default function Category({ items, type, onOpen, update, openData }: Props) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<Filter>("all");
+  const [author, setAuthor] = useState(""); // authorKey; "" = todos
   const [sort, setSort] = useState<Sort>("score");
   const [limit, setLimit] = useState(PAGE);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -48,9 +53,28 @@ export default function Category({ items, type, onOpen, update, openData }: Prop
     return again ? [...STATUS_FILTERS.slice(0, 3), ["again", again], ...STATUS_FILTERS.slice(3)] : STATUS_FILTERS;
   }, [type]);
   useEffect(() => setStatus((s) => (filters.some(([f]) => f === s) ? s : "all")), [filters]);
+
+  // Autores de los libros, por orden alfabético y con cuántos tienes de cada uno
+  const authors = useMemo(() => {
+    if (type !== "book") return [];
+    const m = new Map<string, { name: string; n: number }>();
+    for (const i of all)
+      for (const a of authorsOf(i)) {
+        const k = authorKey(a);
+        const x = m.get(k);
+        if (x) x.n++;
+        else m.set(k, { name: a, n: 1 });
+      }
+    return [...m].map(([key, x]) => ({ key, ...x })).sort((a, b) => a.name.localeCompare(b.name, "es"));
+  }, [all, type]);
+  useEffect(() => setAuthor((a) => (authors.some((x) => x.key === a) ? a : "")), [authors]);
+
   const shown = useMemo(() => {
     const q = norm(query);
-    const xs = all.filter((i) => matches(i, status) && (!q || norm(i.title).includes(q)));
+    const xs = all.filter(
+      (i) =>
+        matches(i, status) && (!q || norm(i.title).includes(q)) && (!author || authorsOf(i).some((a) => authorKey(a) === author)),
+    );
     const byTitle = (a: Item, b: Item) => a.title.localeCompare(b.title, "es");
     return xs.sort(
       sort === "title"
@@ -59,9 +83,9 @@ export default function Category({ items, type, onOpen, update, openData }: Prop
           ? (a, b) => when(b) - when(a) || byTitle(a, b)
           : (a, b) => (b.userScore ?? -1) - (a.userScore ?? -1) || byTitle(a, b),
     );
-  }, [all, status, query, sort]);
+  }, [all, status, query, author, sort]);
 
-  useEffect(() => setLimit(PAGE), [status, query, sort]);
+  useEffect(() => setLimit(PAGE), [status, query, author, sort]);
 
   // Scroll infinito: al acercarse al final se añaden más portadas
   useEffect(() => {
@@ -84,7 +108,7 @@ export default function Category({ items, type, onOpen, update, openData }: Prop
 
   const rated = shown.filter((i) => i.userScore != null);
   const avg = rated.length ? rated.reduce((a, i) => a + i.userScore!, 0) / rated.length : null;
-  const filtered = query !== "" || status !== "all";
+  const filtered = query !== "" || status !== "all" || author !== "";
 
   return (
     <div className={`stack category ${type}`}>
@@ -118,6 +142,20 @@ export default function Category({ items, type, onOpen, update, openData }: Prop
           </button>
         ))}
       </div>
+
+      {authors.length > 0 && (
+        <label className={`author-filter ${author ? "on" : ""}`}>
+          <IconUser />
+          <select value={author} onChange={(e) => setAuthor(e.target.value)} aria-label="Autor">
+            <option value="">Todos los autores</option>
+            {authors.map((a) => (
+              <option key={a.key} value={a.key}>
+                {a.name} ({a.n})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="summary">
         <span className="hint">
@@ -157,6 +195,7 @@ export default function Category({ items, type, onOpen, update, openData }: Prop
               onClick={() => {
                 setQuery("");
                 setStatus("all");
+                setAuthor("");
               }}
             >
               Quitar filtros
